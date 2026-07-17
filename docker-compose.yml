@@ -1,0 +1,10 @@
+services:
+  discord-moderation-sync:
+    build: .
+    container_name: discord-moderation-sync
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./data:/app/data

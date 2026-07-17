@@ -32,6 +32,24 @@ The `.env` file only needs:
 
 All other bot settings are stored in `data/moderation.sqlite3` and managed through owner-only slash commands such as `/config_set`, `/config_id_add`, `/config_id_remove`, `/config_get`, and `/config_list`.
 
+## Docker Compose Deployment
+
+Create a `.env` file with `DISCORD_TOKEN` and `BOT_OWNER_IDS`, then run:
+
+```sh
+docker compose up -d --build
+```
+
+The Compose service mounts `./data` into the container, so `data/moderation.sqlite3` persists across rebuilds and restarts.
+
+Useful deployment commands:
+
+```sh
+docker compose logs -f
+docker compose restart
+docker compose down
+```
+
 ## Punishment Syncing
 
 The bot applies major moderation actions across configured synced servers. This keeps bans, tempbans, unbans, and timeouts consistent between the primary server and approved affiliated servers.

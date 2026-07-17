@@ -2,6 +2,7 @@ import os
 import sys
 import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 
 import discord
 from discord import app_commands
@@ -137,6 +138,93 @@ async def setting_key_autocomplete(
         app_commands.Choice(name=key, value=key)
         for key in matches[:25]
     ]
+
+
+def normalize_swear_term(term: str) -> str:
+    raw = str(term).strip().lower()
+
+    if "\n" in raw or "\r" in raw:
+        raise ValueError("Term must be a single line.")
+
+    normalized = " ".join(raw.split())
+
+    if not normalized:
+        raise ValueError("Term cannot be empty.")
+
+    return normalized
+
+
+def swears_path() -> Path:
+    return Path(config.SWEARS_FILE)
+
+
+def read_swear_lines() -> list[str]:
+    path = swears_path()
+
+    if not path.exists():
+        return []
+
+    return path.read_text(encoding="utf-8").splitlines()
+
+
+def current_swear_terms() -> list[str]:
+    terms: list[str] = []
+
+    for line in read_swear_lines():
+        stripped = line.strip()
+
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        terms.append(normalize_swear_term(stripped))
+
+    return terms
+
+
+def add_swear_term(term: str) -> bool:
+    normalized = normalize_swear_term(term)
+    terms = set(current_swear_terms())
+
+    if normalized in terms:
+        return False
+
+    path = swears_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    existing_text = path.read_text(encoding="utf-8") if path.exists() else ""
+    needs_newline = bool(existing_text) and not existing_text.endswith("\n")
+
+    with path.open("a", encoding="utf-8") as file:
+        if needs_newline:
+            file.write("\n")
+        file.write(f"{normalized}\n")
+
+    return True
+
+
+def remove_swear_term(term: str) -> bool:
+    normalized = normalize_swear_term(term)
+    lines = read_swear_lines()
+    kept_lines: list[str] = []
+    removed = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped and not stripped.startswith("#") and normalize_swear_term(stripped) == normalized:
+            removed = True
+            continue
+
+        kept_lines.append(line)
+
+    if not removed:
+        return False
+
+    path = swears_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(kept_lines).rstrip() + "\n", encoding="utf-8")
+    return True
+
 
 def format_uptime(started_at: datetime) -> str:
     delta = datetime.now(timezone.utc) - started_at
@@ -669,6 +757,103 @@ class Owner(commands.Cog):
 
         await interaction.response.send_message(
             f"Removed `{parsed_id}` from `{key}`.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="swear_add",
+        description="Add a word or phrase to the flagged-message list.",
+    )
+    @app_commands.describe(
+        term="Word or phrase to flag as its own word/phrase.",
+    )
+    async def swear_add(
+        self,
+        interaction: discord.Interaction,
+        term: str,
+    ):
+        if not await self.owner_check(interaction):
+            return
+
+        try:
+            normalized = normalize_swear_term(term)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True)
+            return
+
+        added = add_swear_term(normalized)
+
+        if not added:
+            await interaction.response.send_message(
+                f"`{normalized}` is already in `{config.SWEARS_FILE}`.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_message(
+            f"Added `{normalized}` to `{config.SWEARS_FILE}`.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="swear_remove",
+        description="Remove a word or phrase from the flagged-message list.",
+    )
+    @app_commands.describe(
+        term="Word or phrase to stop flagging.",
+    )
+    async def swear_remove(
+        self,
+        interaction: discord.Interaction,
+        term: str,
+    ):
+        if not await self.owner_check(interaction):
+            return
+
+        try:
+            normalized = normalize_swear_term(term)
+        except ValueError as exc:
+            await interaction.response.send_message(str(exc), ephemeral=True)
+            return
+
+        removed = remove_swear_term(normalized)
+
+        if not removed:
+            await interaction.response.send_message(
+                f"`{normalized}` was not found in `{config.SWEARS_FILE}`.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_message(
+            f"Removed `{normalized}` from `{config.SWEARS_FILE}`.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="swear_list",
+        description="Show the current flagged-message words and phrases.",
+    )
+    async def swear_list(self, interaction: discord.Interaction):
+        if not await self.owner_check(interaction):
+            return
+
+        terms = current_swear_terms()
+
+        if not terms:
+            await interaction.response.send_message(
+                f"No terms are currently configured in `{config.SWEARS_FILE}`.",
+                ephemeral=True,
+            )
+            return
+
+        message = ", ".join(f"`{term}`" for term in terms)
+
+        if len(message) > 1900:
+            message = message[:1897] + "..."
+
+        await interaction.response.send_message(
+            f"Terms in `{config.SWEARS_FILE}`:\n{message}",
             ephemeral=True,
         )
 

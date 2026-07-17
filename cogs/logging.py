@@ -54,6 +54,27 @@ def load_flagged_terms_from_file(path: str) -> list[str]:
     return terms
 
 
+def flagged_term_pattern(term: str) -> re.Pattern[str]:
+    normalized = " ".join(term.split())
+    escaped_parts = [re.escape(part) for part in normalized.split()]
+    phrase_pattern = r"\s+".join(escaped_parts)
+
+    return re.compile(rf"(?<!\w){phrase_pattern}(?!\w)", re.IGNORECASE)
+
+
+def matched_flagged_terms(content: str, terms: list[str]) -> list[str]:
+    matches: list[str] = []
+
+    for term in terms:
+        if not term:
+            continue
+
+        if flagged_term_pattern(term).search(content):
+            matches.append(term)
+
+    return matches
+
+
 # ============================================================
 # Config
 # ============================================================
@@ -541,15 +562,9 @@ class Logging(commands.Cog):
         if not message.content:
             return
 
-        lowered = message.content.lower()
-
         flagged_terms = load_flagged_terms_from_file(config.SWEARS_FILE)
         flagged_re = current_flagged_regex()
-
-        matched_terms = [
-            term for term in flagged_terms
-            if term in lowered
-        ]
+        matched_terms = matched_flagged_terms(message.content, flagged_terms)
 
         regex_match = flagged_re.search(message.content) if flagged_re else None
 

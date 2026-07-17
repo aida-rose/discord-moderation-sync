@@ -43,7 +43,7 @@ def current_sync_guild_id_list() -> list[int]:
     Returns synced guild IDs in a stable order.
 
     Includes:
-    - guild IDs loaded from SQLite-backed config.py
+    - home/base guild IDs loaded from SQLite-backed config.py
     - runtime affiliate guild IDs from the shared moderation database
     """
 
@@ -228,13 +228,80 @@ async def post_modlog(bot: commands.Bot, embed: discord.Embed) -> None:
             print(f"Failed to send log to channel {channel_id}: {exc}")
 
 
-def guild_result_text(results: list[GuildResult]) -> str:
-    lines = []
+def is_user_not_in_server_result(result: GuildResult) -> bool:
+    detail = str(getattr(result, "detail", "")).lower()
 
-    for result in results:
-        lines.append(
-            f"{result.status} **{result.guild_name}** `({result.guild_id})`\n"
-            f"> {result.detail}"
+    return (
+        getattr(result, "status", "") == "Skipped"
+        and (
+            "not in this server" in detail
+            or "not in this server right now" in detail
+            or "not currently in" in detail
+        )
+    )
+
+
+def is_permission_or_hierarchy_result(result: GuildResult) -> bool:
+    detail = str(getattr(result, "detail", "")).lower()
+
+    return (
+        getattr(result, "status", "") == "Failed"
+        and (
+            "missing permission" in detail
+            or "role hierarchy" in detail
+            or "role is too low" in detail
+            or "above the bot" in detail
+            or "hierarchy is too low" in detail
+        )
+    )
+
+
+def server_list_text(results: list[GuildResult]) -> str:
+    lines = [
+        f"- **{result.guild_name}** `({result.guild_id})`"
+        for result in results
+    ]
+
+    return "\n".join(lines) if lines else "None"
+
+
+def guild_result_text(results: list[GuildResult]) -> str:
+    successful = [
+        result
+        for result in results
+        if getattr(result, "status", "") == "Done"
+    ]
+    user_not_in_server = [
+        result
+        for result in results
+        if is_user_not_in_server_result(result)
+    ]
+    permission_or_hierarchy = [
+        result
+        for result in results
+        if is_permission_or_hierarchy_result(result)
+    ]
+    other_failures = [
+        result
+        for result in results
+        if getattr(result, "status", "") in {"Failed", "Needs review"}
+        and result not in permission_or_hierarchy
+    ]
+
+    lines = [
+        f"Succeeded: **{len(successful)}**",
+        f"User not in server: **{len(user_not_in_server)}**",
+        f"Missing permissions / hierarchy: **{len(permission_or_hierarchy)}**",
+        "Missing permissions / hierarchy servers:",
+        server_list_text(permission_or_hierarchy),
+    ]
+
+    if other_failures:
+        lines.extend(
+            [
+                f"Other failures / needs review: **{len(other_failures)}**",
+                server_list_text(other_failures),
+            ]
         )
 
     text = "\n".join(lines)

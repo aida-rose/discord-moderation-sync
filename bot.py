@@ -93,7 +93,7 @@ async def on_ready():
 
     print(f"Logged in as {bot.user} ({user_id})")
     print(f"Home guild: {config.HOME_GUILD_ID or 'not configured'}")
-    print(f"Static affiliate guilds: {config.AFFILIATE_GUILD_IDS or 'none'}")
+    print(f"Base guild: {config.BASE_GUILD_ID or 'not configured'}")
     print(f"Current action guilds: {sorted(current_sync_guild_ids())}")
     print(f"Command prefix: {config.COMMAND_PREFIX}")
     print(f"Nation selector enabled: {config.ENABLE_NATION_SELECTOR}")

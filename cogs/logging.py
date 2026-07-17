@@ -82,7 +82,7 @@ def matched_flagged_terms(content: str, terms: list[str]) -> list[str]:
 def current_logged_guild_ids() -> set[int]:
     return (
         ({config.HOME_GUILD_ID} if config.HOME_GUILD_ID else set())
-        | set(config.AFFILIATE_GUILD_IDS)
+        | ({config.BASE_GUILD_ID} if config.BASE_GUILD_ID else set())
         | set(config.LOGGED_GUILD_IDS)
         | get_runtime_affiliate_ids()
     )

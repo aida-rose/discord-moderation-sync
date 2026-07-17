@@ -12,7 +12,6 @@ import config
 
 
 ID_LIST_SETTINGS = {
-    "AFFILIATE_GUILD_IDS",
     "LOGGED_GUILD_IDS",
     "STAFF_ROLE_IDS",
     "BAN_STAFF_ROLE_IDS",

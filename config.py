@@ -62,8 +62,8 @@ SETTING_DEFAULTS: dict[str, str] = {
     "NETWORK_NAME": "ESMP affiliate servers",
     "CASE_TAG": "ESMP-MOD",
     "HOME_GUILD_ID": "0",
+    "BASE_GUILD_ID": "0",
     "HOME_LOG_CHANNEL_ID": "0",
-    "AFFILIATE_GUILD_IDS": "",
     "AFFILIATE_LOG_ROUTES": "",
     "LOGGED_GUILD_IDS": "",
     "STAFF_ROLE_IDS": "",
@@ -109,8 +109,8 @@ SETTING_DESCRIPTIONS: dict[str, str] = {
     "NETWORK_NAME": "Network/server name shown in notices.",
     "CASE_TAG": "Short tag used in audit-log reasons.",
     "HOME_GUILD_ID": "Primary/home Discord server ID.",
+    "BASE_GUILD_ID": "Base/server hub Discord server ID.",
     "HOME_LOG_CHANNEL_ID": "Shared moderation log channel/thread ID.",
-    "AFFILIATE_GUILD_IDS": "Comma-separated static affiliate server IDs.",
     "AFFILIATE_LOG_ROUTES": "Comma-separated guild_id:channel_id log routes.",
     "LOGGED_GUILD_IDS": "Comma-separated extra guild IDs to log.",
     "STAFF_ROLE_IDS": "Comma-separated regular moderation role IDs.",
@@ -130,8 +130,8 @@ ENV_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "NETWORK_NAME": ("ESMP_NETWORK_NAME", "SERVER_NETWORK_NAME", "NETWORK_NAME"),
     "CASE_TAG": ("ESMP_CASE_TAG", "CASE_TAG"),
     "HOME_GUILD_ID": ("ESMP_HOME_GUILD_ID", "PRIMARY_GUILD_ID"),
+    "BASE_GUILD_ID": ("BASE_GUILD_ID",),
     "HOME_LOG_CHANNEL_ID": ("ESMP_HOME_LOG", "PRIMARY_LOG_CHANNEL_ID"),
-    "AFFILIATE_GUILD_IDS": ("ESMP_AFFILIATE_GUILDS", "AFFILIATE_GUILD_IDS"),
     "AFFILIATE_LOG_ROUTES": ("ESMP_AFFILIATE_LOGS", "AFFILIATE_LOG_CHANNELS"),
     "STAFF_ROLE_IDS": ("ESMP_STAFF_ROLES", "MOD_ROLE_IDS"),
     "BAN_STAFF_ROLE_IDS": ("ESMP_BAN_ROLES", "BAN_MOD_ROLE_IDS", "BAN_ROLE_IDS"),
@@ -223,6 +223,40 @@ def migrate_env_settings() -> None:
                 (key, value),
             )
 
+        base_row = conn.execute(
+            "SELECT value FROM bot_settings WHERE key = ?",
+            ("BASE_GUILD_ID",),
+        ).fetchone()
+
+        if base_row is None or str(base_row["value"]) in {"", "0"}:
+            legacy_row = conn.execute(
+                "SELECT value FROM bot_settings WHERE key = ?",
+                ("AFFILIATE_GUILD_IDS",),
+            ).fetchone()
+            legacy_value = str(legacy_row["value"]) if legacy_row is not None else None
+
+            if legacy_value is None:
+                legacy_value = _env_value(("ESMP_AFFILIATE_GUILDS", "AFFILIATE_GUILD_IDS"))
+
+            legacy_ids = _csv_ids(legacy_value or "")
+
+            if legacy_ids:
+                conn.execute(
+                    """
+                    INSERT INTO bot_settings (key, value)
+                    VALUES (?, ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    ("BASE_GUILD_ID", str(legacy_ids[0])),
+                )
+
+        conn.execute(
+            "DELETE FROM bot_settings WHERE key = ?",
+            ("AFFILIATE_GUILD_IDS",),
+        )
+
 
 def setting_keys() -> list[str]:
     return sorted(SETTING_DEFAULTS)
@@ -300,8 +334,8 @@ def reload_settings() -> None:
     global NETWORK_NAME
     global CASE_TAG
     global HOME_GUILD_ID
+    global BASE_GUILD_ID
     global HOME_LOG_CHANNEL_ID
-    global AFFILIATE_GUILD_IDS
     global AFFILIATE_LOG_ROUTES
     global LOGGED_GUILD_IDS
     global STAFF_ROLE_IDS
@@ -335,8 +369,8 @@ def reload_settings() -> None:
     NETWORK_NAME = get_setting("NETWORK_NAME")
     CASE_TAG = get_setting("CASE_TAG")
     HOME_GUILD_ID = _int_setting("HOME_GUILD_ID")
+    BASE_GUILD_ID = _int_setting("BASE_GUILD_ID")
     HOME_LOG_CHANNEL_ID = _int_setting("HOME_LOG_CHANNEL_ID")
-    AFFILIATE_GUILD_IDS = _csv_ids(get_setting("AFFILIATE_GUILD_IDS"))
     AFFILIATE_LOG_ROUTES = _log_routes(get_setting("AFFILIATE_LOG_ROUTES"))
     LOGGED_GUILD_IDS = _csv_ids(get_setting("LOGGED_GUILD_IDS"))
     STAFF_ROLE_IDS = set(_csv_ids(get_setting("STAFF_ROLE_IDS")))
@@ -365,7 +399,7 @@ def reload_settings() -> None:
     NATION_ASSIGNMENTS_CSV = get_setting("NATION_ASSIGNMENTS_CSV")
 
     SYNC_GUILD_IDS = []
-    for guild_id in [HOME_GUILD_ID, *AFFILIATE_GUILD_IDS]:
+    for guild_id in [HOME_GUILD_ID, BASE_GUILD_ID]:
         if guild_id and guild_id not in SYNC_GUILD_IDS:
             SYNC_GUILD_IDS.append(guild_id)
 

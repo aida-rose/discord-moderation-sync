@@ -9,6 +9,10 @@ from discord.ext import commands, tasks
 
 import config
 from storage import moderation_db, same_database_path
+from protected_actions import (
+    clear_protected_action,
+    protect_action,
+)
 from common import (
     BackfillResult,
     NothingToDo,
@@ -129,46 +133,6 @@ async def for_each_current_guild(
 MAX_CASE_LOG_REASON_LENGTH = 900
 MAX_CASE_LOG_DM_RESULT_LENGTH = 500
 MAX_CASE_LOG_RESULT_DETAIL_LENGTH = 180
-MAX_CASE_LOG_RESULTS = 8
-
-
-def shorten_text(value: object, limit: int) -> str:
-    text = str(value) if value is not None else ""
-
-    if len(text) <= limit:
-        return text
-
-    return text[: limit - 3] + "..."
-
-
-def compact_results_for_case_log(results: list) -> list:
-    compacted = []
-
-    for result in results[:MAX_CASE_LOG_RESULTS]:
-        result.detail = shorten_text(
-            getattr(result, "detail", ""),
-            MAX_CASE_LOG_RESULT_DETAIL_LENGTH,
-        )
-        compacted.append(result)
-
-    omitted = len(results) - len(compacted)
-
-    if omitted > 0:
-        class OmittedResult:
-            guild_name = "Additional servers"
-            guild_id = 0
-            status = "Omitted"
-            detail = f"{omitted} more server result(s) hidden to keep the mod-log under Discord message limits."
-
-        compacted.append(OmittedResult())
-
-    return compacted
-
-
-MAX_CASE_LOG_REASON_LENGTH = 900
-MAX_CASE_LOG_DM_RESULT_LENGTH = 500
-MAX_CASE_LOG_RESULT_DETAIL_LENGTH = 180
-MAX_CASE_LOG_RESULTS_PER_MESSAGE = 6
 
 
 def shorten_text(value: object, limit: int) -> str:
@@ -191,13 +155,6 @@ def shorten_result_details(results: list) -> list:
     return results
 
 
-def chunk_results(results: list, chunk_size: int) -> list[list]:
-    return [
-        results[index:index + chunk_size]
-        for index in range(0, len(results), chunk_size)
-    ]
-
-
 async def safe_case_log(
     bot: commands.Bot,
     *,
@@ -210,74 +167,26 @@ async def safe_case_log(
     dm_result: str,
     duration=None,
 ):
-
     safe_results = shorten_result_details(results)
-    result_chunks = chunk_results(
-        safe_results,
-        MAX_CASE_LOG_RESULTS_PER_MESSAGE,
-    )
+    kwargs = {
+        "action": shorten_text(action, 160),
+        "moderator": moderator,
+        "target_user": target_user,
+        "target_user_id": target_user_id,
+        "reason": shorten_text(reason, MAX_CASE_LOG_REASON_LENGTH),
+        "results": safe_results,
+        "dm_result": shorten_text(dm_result, MAX_CASE_LOG_DM_RESULT_LENGTH),
+    }
 
-    if not result_chunks:
-        result_chunks = [[]]
+    if duration is not None:
+        kwargs["duration"] = duration
 
-    total_parts = len(result_chunks)
-
-    for index, result_chunk in enumerate(result_chunks, start=1):
-        action_text = shorten_text(action, 160)
-
-        if total_parts > 1:
-            action_text = f"{action_text} — Part {index}/{total_parts}"
-
-        part_dm_result = (
-            shorten_text(dm_result, MAX_CASE_LOG_DM_RESULT_LENGTH)
-            if index == 1
-            else "See part 1."
-        )
-
-        kwargs = {
-            "action": action_text,
-            "moderator": moderator,
-            "target_user": target_user,
-            "target_user_id": target_user_id,
-            "reason": shorten_text(reason, MAX_CASE_LOG_REASON_LENGTH),
-            "results": result_chunk,
-            "dm_result": part_dm_result,
-        }
-
-        if duration is not None:
-            kwargs["duration"] = duration
-
-        try:
-            await case_log(bot, **kwargs)
-
-        except discord.HTTPException:
-            smaller_chunks = chunk_results(result_chunk, 2)
-
-            for small_index, small_chunk in enumerate(smaller_chunks, start=1):
-                retry_action = shorten_text(action, 120)
-
-                if total_parts > 1 or len(smaller_chunks) > 1:
-                    retry_action = (
-                        f"{retry_action} — Part {index}/{total_parts}"
-                        f".{small_index}"
-                    )
-
-                retry_kwargs = {
-                    "action": retry_action,
-                    "moderator": moderator,
-                    "target_user": target_user,
-                    "target_user_id": target_user_id,
-                    "reason": shorten_text(reason, 500),
-                    "results": small_chunk,
-                    "dm_result": part_dm_result if small_index == 1 else "See earlier part.",
-                }
-
-                if duration is not None:
-                    retry_kwargs["duration"] = duration
-
-                await case_log(bot, **retry_kwargs)
-
-        await asyncio.sleep(0.25)
+    try:
+        await case_log(bot, **kwargs)
+    except discord.HTTPException:
+        kwargs["reason"] = shorten_text(reason, 500)
+        kwargs["dm_result"] = shorten_text(dm_result, 250)
+        await case_log(bot, **kwargs)
 
 
 def tempban_db() -> sqlite3.Connection:
@@ -527,8 +436,18 @@ class Moderation(commands.Cog):
                         unban_target,
                         reason=f"[{config.CASE_TAG}] tempban expired. Tempban ID: {tempban_id}",
                     )
+                    clear_protected_action(
+                        action_type="ban",
+                        guild_id=guild.id,
+                        user_id=user_id,
+                    )
                     return "Tempban expired; ban removed."
                 except discord.NotFound:
+                    clear_protected_action(
+                        action_type="ban",
+                        guild_id=guild.id,
+                        user_id=user_id,
+                    )
                     raise NothingToDo("User was not banned in this server.")
 
             results = await for_each_current_guild(self.bot, unban_in_guild)
@@ -586,6 +505,12 @@ class Moderation(commands.Cog):
                 ban_target,
                 reason=audit_reason,
                 delete_message_seconds=config.BAN_PRUNE_SECONDS,
+            )
+            protect_action(
+                action_type="ban",
+                guild_id=guild.id,
+                user_id=target_user_id,
+                reason=audit_reason,
             )
             return "Ban applied."
 
@@ -648,6 +573,13 @@ class Moderation(commands.Cog):
                 reason=audit_reason,
                 delete_message_seconds=config.BAN_PRUNE_SECONDS,
             )
+            protect_action(
+                action_type="ban",
+                guild_id=guild.id,
+                user_id=target_user_id,
+                reason=audit_reason,
+                expires_at=expires_at,
+            )
             return f"Tempban applied until {discord.utils.format_dt(expires_at, 'F')}."
 
         results = await for_each_current_guild(self.bot, tempban_in_guild)
@@ -684,6 +616,11 @@ class Moderation(commands.Cog):
 
         async def unban_in_guild(guild: discord.Guild) -> str:
             await guild.unban(unban_target, reason=audit_reason)
+            clear_protected_action(
+                action_type="ban",
+                guild_id=guild.id,
+                user_id=target_user_id,
+            )
             return "Ban removed."
 
         results = await for_each_current_guild(self.bot, unban_in_guild)
@@ -827,6 +764,13 @@ class Moderation(commands.Cog):
                 raise NothingToDo("Member is not in this server right now.")
 
             await member.timeout(timeout_duration, reason=audit_reason)
+            protect_action(
+                action_type="timeout",
+                guild_id=guild.id,
+                user_id=target_user_id,
+                reason=audit_reason,
+                expires_at=datetime.now(timezone.utc) + timeout_duration,
+            )
             return f"Timeout set for {timeout_duration}."
 
         results = await for_each_current_guild(self.bot, mute_in_guild)
@@ -859,6 +803,11 @@ class Moderation(commands.Cog):
                 raise NothingToDo("Member is not in this server right now.")
 
             await member.timeout(None, reason=audit_reason)
+            clear_protected_action(
+                action_type="timeout",
+                guild_id=guild.id,
+                user_id=target_user_id,
+            )
             return "Timeout cleared."
 
         results = await for_each_current_guild(self.bot, unmute_in_guild)
@@ -926,7 +875,7 @@ class Moderation(commands.Cog):
             await ctx.reply(
                 (
                     "That server ID is not in your configured synced guild list.\n\n"
-                    "Add it to `AFFILIATE_GUILD_IDS` with `/config_id_add`, or add it with the owner affiliate command first."
+                    "Set it as `BASE_GUILD_ID` with `/config_set`, or add it with the owner affiliate command first."
                 ),
                 mention_author=False,
             )
@@ -1081,6 +1030,13 @@ class Moderation(commands.Cog):
                         discord.Object(id=user.id),
                         reason=audit_reason,
                         delete_message_seconds=0,
+                    )
+                    protect_action(
+                        action_type="ban",
+                        guild_id=affiliate_guild.id,
+                        user_id=user.id,
+                        reason=audit_reason,
+                        expires_at=expires_at_text if active_tempban is not None else None,
                     )
                     summary.newly_banned += 1
                     existing_affiliate_bans.add(user.id)

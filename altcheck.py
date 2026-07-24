@@ -17,6 +17,8 @@ ALT_FLAG_COOLDOWN_SECONDS = 6 * 60 * 60
 
 MAX_LANGUAGE_TOKENS = 120
 MAX_LANGUAGE_PHRASES = 80
+MIN_LANGUAGE_MESSAGES_FOR_SCORING = 25
+MIN_LANGUAGE_TOKENS_FOR_SCORING = 200
 
 STOPWORDS = {
     "about",
@@ -882,7 +884,10 @@ def compare_language(
     target_tokens_total = int(target["token_count"])
     candidate_tokens_total = int(candidate["token_count"])
 
-    if min(target_messages, candidate_messages) < 3 or min(target_tokens_total, candidate_tokens_total) < 20:
+    if (
+        min(target_messages, candidate_messages) < MIN_LANGUAGE_MESSAGES_FOR_SCORING
+        or min(target_tokens_total, candidate_tokens_total) < MIN_LANGUAGE_TOKENS_FOR_SCORING
+    ):
         return 0, [], 0.0, 0.0, 0.0
 
     target_tokens = json_counter(target["tokens_json"])

@@ -68,6 +68,7 @@ SETTING_DEFAULTS: dict[str, str] = {
     "LOGGED_GUILD_IDS": "",
     "STAFF_ROLE_IDS": "",
     "BAN_STAFF_ROLE_IDS": "",
+    "ALT_ALERT_ROLE_ID": "0",
     "PRIMARY_JOIN_ROLE_ID": "0",
     "BAN_PRUNE_SECONDS": "0",
     "SEND_USER_NOTICES": "true",
@@ -115,6 +116,7 @@ SETTING_DESCRIPTIONS: dict[str, str] = {
     "LOGGED_GUILD_IDS": "Comma-separated extra guild IDs to log.",
     "STAFF_ROLE_IDS": "Comma-separated regular moderation role IDs.",
     "BAN_STAFF_ROLE_IDS": "Comma-separated ban-permission role IDs.",
+    "ALT_ALERT_ROLE_ID": "Role ID pinged when altcheck matches a banned account.",
     "PRIMARY_JOIN_ROLE_ID": "Role ID assigned to new members.",
     "BAN_PRUNE_SECONDS": "Seconds of messages to delete when banning.",
     "SEND_USER_NOTICES": "Whether punishment notices are DM'd to users.",
@@ -135,6 +137,7 @@ ENV_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "AFFILIATE_LOG_ROUTES": ("ESMP_AFFILIATE_LOGS", "AFFILIATE_LOG_CHANNELS"),
     "STAFF_ROLE_IDS": ("ESMP_STAFF_ROLES", "MOD_ROLE_IDS"),
     "BAN_STAFF_ROLE_IDS": ("ESMP_BAN_ROLES", "BAN_MOD_ROLE_IDS", "BAN_ROLE_IDS"),
+    "ALT_ALERT_ROLE_ID": ("ALT_ALERT_ROLE_ID",),
     "BAN_PRUNE_SECONDS": ("ESMP_BAN_PRUNE_SECONDS", "BAN_DELETE_MESSAGE_SECONDS", "BAN_PRUNE_SECONDS"),
     "SEND_USER_NOTICES": ("ESMP_SEND_USER_NOTICES", "DM_ON_PUNISHMENTS", "SEND_USER_NOTICES"),
     "APPEAL_URL": ("ESMP_APPEAL_URL", "APPEAL_URL"),
@@ -340,6 +343,7 @@ def reload_settings() -> None:
     global LOGGED_GUILD_IDS
     global STAFF_ROLE_IDS
     global BAN_STAFF_ROLE_IDS
+    global ALT_ALERT_ROLE_ID
     global PRIMARY_JOIN_ROLE_ID
     global BAN_PRUNE_SECONDS
     global SEND_USER_NOTICES
@@ -375,6 +379,7 @@ def reload_settings() -> None:
     LOGGED_GUILD_IDS = _csv_ids(get_setting("LOGGED_GUILD_IDS"))
     STAFF_ROLE_IDS = set(_csv_ids(get_setting("STAFF_ROLE_IDS")))
     BAN_STAFF_ROLE_IDS = set(_csv_ids(get_setting("BAN_STAFF_ROLE_IDS")))
+    ALT_ALERT_ROLE_ID = _int_setting("ALT_ALERT_ROLE_ID")
     PRIMARY_JOIN_ROLE_ID = _int_setting("PRIMARY_JOIN_ROLE_ID")
     BAN_PRUNE_SECONDS = _int_setting("BAN_PRUNE_SECONDS")
     SEND_USER_NOTICES = _bool_setting("SEND_USER_NOTICES")

@@ -8,6 +8,16 @@ import discord
 from discord.ext import commands, tasks
 
 import config
+from altcheck import (
+    AltReport,
+    best_match_text,
+    concise_report_text,
+    evaluate_alt_risk,
+    mark_known_ban,
+    record_user_profile,
+    report_assessment,
+    warm_cached_profiles,
+)
 from storage import moderation_db, same_database_path
 from protected_actions import (
     clear_protected_action,
@@ -249,6 +259,48 @@ async def safe_case_log(
         kwargs["reason"] = shorten_text(reason, 500)
         kwargs["dm_result"] = shorten_text(dm_result, 250)
         await case_log(bot, **kwargs)
+
+
+async def current_ban_map(bot: commands.Bot) -> dict[int, list[int]]:
+    ban_map: dict[int, list[int]] = {}
+
+    for guild_id in current_sync_guild_ids():
+        guild = bot.get_guild(guild_id)
+
+        if guild is None:
+            continue
+
+        try:
+            async for ban_entry in guild.bans(limit=None):
+                user_id = int(ban_entry.user.id)
+                guilds = ban_map.setdefault(user_id, [])
+
+                if guild.id not in guilds:
+                    guilds.append(guild.id)
+
+                record_user_profile(ban_entry.user, guild_id=guild.id)
+                mark_known_ban(user_id, guild.id, active=True)
+        except discord.Forbidden:
+            continue
+        except discord.HTTPException:
+            continue
+
+        await asyncio.sleep(0.25)
+
+    return ban_map
+
+
+def altcheck_color(report: AltReport) -> discord.Color:
+    if report.level == "high":
+        return discord.Color.red()
+
+    if report.level == "medium":
+        return discord.Color.orange()
+
+    if report.level == "low":
+        return discord.Color.gold()
+
+    return discord.Color.green()
 
 
 def tempban_db() -> sqlite3.Connection:
@@ -1226,7 +1278,110 @@ class Moderation(commands.Cog):
             mention_author=False,
             allowed_mentions=discord.AllowedMentions.none(),
         )
-        
+
+    @commands.command(name="altcheck")
+    async def alt_check(self, ctx: commands.Context, target: str):
+        """
+        Usage:
+        e!altcheck user_id
+        """
+        target_user_id = user_id_arg(target)
+
+        async with ctx.typing():
+            target_user = await display_user(self.bot, target_user_id)
+            target_member = await member_in(ctx.guild, target_user_id) if ctx.guild else None
+            target_profile = target_member or target_user
+
+            for guild_id in current_sync_guild_ids():
+                guild = self.bot.get_guild(guild_id)
+
+                if guild is not None:
+                    warm_cached_profiles(guild.members)
+
+            if target_profile is not None:
+                record_user_profile(
+                    target_profile,
+                    guild_id=ctx.guild.id if ctx.guild is not None else None,
+                )
+
+            ban_map = await current_ban_map(self.bot)
+            report = evaluate_alt_risk(
+                target_user_id,
+                account_created_at=getattr(target_profile, "created_at", None),
+                banned_guilds_by_user=ban_map,
+            )
+
+            target_text = (
+                f"<@{target_profile.id}> {target_profile} (`{target_profile.id}`)"
+                if target_profile is not None
+                else f"<@{target_user_id}> (`{target_user_id}`)"
+            )
+            evidence_text = "\n".join(f"- {reason}" for reason in report.reasons[:6])
+
+            embed = discord.Embed(
+                title="Altcheck Report",
+                description=shorten_text(concise_report_text(report), 4096),
+                color=altcheck_color(report),
+            )
+            embed.add_field(name="User", value=target_text, inline=False)
+            embed.add_field(name="Assessment", value=report_assessment(report), inline=False)
+            embed.add_field(
+                name="Score",
+                value=f"`{report.score}/100` - likelihood `{report.likelihood_percent}%`",
+                inline=True,
+            )
+            embed.add_field(name="Level", value=report.level.title(), inline=True)
+            embed.add_field(name="Best Match", value=best_match_text(report), inline=False)
+            embed.add_field(
+                name="Point Breakdown",
+                value=(
+                    f"Profile `{report.profile_points}` | "
+                    f"Language `{report.language_points}` | "
+                    f"Account `{report.account_points}`"
+                ),
+                inline=False,
+            )
+            embed.add_field(
+                name="Language Samples",
+                value=f"Target `{report.target_message_count}` | Match `{report.matched_message_count}`",
+                inline=True,
+            )
+            embed.add_field(name="Evidence", value=shorten_text(evidence_text, 1024), inline=False)
+
+            embed.set_footer(text="Altcheck uses public Discord profile and message-language patterns only.")
+
+            if target_profile is not None:
+                embed.set_thumbnail(url=target_profile.display_avatar.url)
+
+            logged_alt_flag = False
+            logging_cog = self.bot.get_cog("Logging")
+            if report.is_medium_or_high and logging_cog is not None and ctx.guild is not None:
+                send_alt_flag_log = getattr(logging_cog, "send_alt_flag_log", None)
+
+                if send_alt_flag_log is not None:
+                    logged_alt_flag = await send_alt_flag_log(
+                        report,
+                        guild=ctx.guild,
+                        user=target_profile,
+                        source=f"Manual altcheck by {ctx.author} ({ctx.author.id})",
+                        force=True,
+                    )
+
+            if report.matched_banned_user_id is not None:
+                if config.ALT_ALERT_ROLE_ID and logged_alt_flag:
+                    ping_note = f"<@&{config.ALT_ALERT_ROLE_ID}> was pinged in the other log thread."
+                elif config.ALT_ALERT_ROLE_ID:
+                    ping_note = "The alert role is configured, but I could not send the other-thread alert."
+                else:
+                    ping_note = "`ALT_ALERT_ROLE_ID` is not configured, so no role was pinged."
+
+                embed.add_field(name="Banned Match Alert", value=ping_note, inline=False)
+
+        await ctx.reply(
+            embed=embed,
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
     @commands.command(name="modhelp")
     async def help_msg(self, ctx: commands.Context):
@@ -1240,6 +1395,7 @@ class Moderation(commands.Cog):
             f"`{prefix}kick user_id reason`\n\n"
             f"`{prefix}mute user_id duration reason`\n"
             f"`{prefix}unmute user_id reason`\n\n"
+            f"`{prefix}altcheck user_id`\n\n"
             f"`{prefix}warn user_id reason`\n"
             f"`{prefix}warns user_id`\n"
             f"`{prefix}warncount user_id`\n"

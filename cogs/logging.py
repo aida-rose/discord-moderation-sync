@@ -9,6 +9,18 @@ import discord
 from discord.ext import commands
 
 import config
+from altcheck import (
+    AltReport,
+    best_match_text,
+    concise_report_text,
+    evaluate_alt_risk,
+    mark_known_ban,
+    record_alt_flag_logged,
+    record_message_language,
+    record_user_profile,
+    report_assessment,
+    should_log_alt_flag,
+)
 
 try:
     from affiliate_config import (
@@ -474,6 +486,7 @@ class Logging(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._recent_voice_channel_status_logs: dict[int, tuple[Optional[str], datetime]] = {}
+        self._recent_alt_checks: dict[int, datetime] = {}
 
     # ------------------------------------------------------------
     # Core log sending
@@ -776,6 +789,135 @@ class Logging(commands.Cog):
         await self.warn_log(**kwargs)
 
     # ------------------------------------------------------------
+    # Alt account review logs
+    # ------------------------------------------------------------
+
+    def altcheck_due(self, user_id: int, *, force: bool = False) -> bool:
+        if force:
+            self._recent_alt_checks[user_id] = utc_now()
+            return True
+
+        now = utc_now()
+        last_checked = self._recent_alt_checks.get(user_id)
+
+        if last_checked is not None and (now - last_checked).total_seconds() < 300:
+            return False
+
+        self._recent_alt_checks[user_id] = now
+        return True
+
+    async def maybe_alt_flag(
+        self,
+        *,
+        guild: discord.Guild,
+        user: discord.abc.User,
+        source: str,
+        force: bool = False,
+    ) -> AltReport | None:
+        if getattr(user, "bot", False):
+            return None
+
+        record_user_profile(user, guild_id=guild.id)
+
+        if not self.altcheck_due(user.id, force=force):
+            return None
+
+        report = evaluate_alt_risk(
+            user.id,
+            account_created_at=getattr(user, "created_at", None),
+        )
+
+        if should_log_alt_flag(report):
+            await self.send_alt_flag_log(
+                report,
+                guild=guild,
+                user=user,
+                source=source,
+            )
+
+        return report
+
+    async def send_alt_flag_log(
+        self,
+        report: AltReport,
+        *,
+        guild: discord.Guild,
+        user: Optional[discord.abc.User] = None,
+        source: str = "Automatic altcheck",
+        force: bool = False,
+    ) -> bool:
+        if not force and not should_log_alt_flag(report):
+            return False
+
+        thread = await self.get_log_thread("other", guild)
+        if thread is None:
+            return False
+
+        color = discord.Color.red() if report.level == "high" else discord.Color.orange()
+        target_text = format_user(user) if user is not None else format_user_id(report.user_id)
+        evidence_text = "\n".join(f"- {reason}" for reason in report.reasons[:6])
+
+        embed = discord.Embed(
+            title=f"Alt Account Review - {report.level.title()}",
+            description=truncate(concise_report_text(report), 4096),
+            color=color,
+            timestamp=utc_now(),
+        )
+        embed.add_field(name="Server", value=format_guild(guild), inline=False)
+        embed.add_field(name="User", value=target_text, inline=False)
+        embed.add_field(name="Assessment", value=report_assessment(report), inline=False)
+        embed.add_field(name="Best Match", value=best_match_text(report), inline=False)
+        embed.add_field(
+            name="Score",
+            value=f"`{report.score}/100` - likelihood `{report.likelihood_percent}%`",
+            inline=True,
+        )
+        embed.add_field(
+            name="Point Breakdown",
+            value=(
+                f"Profile `{report.profile_points}` | "
+                f"Language `{report.language_points}` | "
+                f"Account `{report.account_points}`"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="Language Samples",
+            value=f"Target `{report.target_message_count}` | Match `{report.matched_message_count}`",
+            inline=True,
+        )
+        embed.add_field(name="Evidence", value=truncate(evidence_text or "None", 1024), inline=False)
+        embed.add_field(name="Source", value=truncate(source, 1024), inline=False)
+        embed.set_footer(text="Altcheck uses public Discord profile and message-language patterns only.")
+
+        thumbnail = avatar_url(user) if user is not None else None
+        if thumbnail:
+            embed.set_thumbnail(url=thumbnail)
+
+        content = None
+        allowed_mentions = discord.AllowedMentions.none()
+
+        if report.matched_banned_user_id is not None and config.ALT_ALERT_ROLE_ID:
+            content = f"<@&{config.ALT_ALERT_ROLE_ID}>"
+            allowed_mentions = discord.AllowedMentions(
+                everyone=False,
+                users=False,
+                roles=True,
+            )
+
+        try:
+            await thread.send(
+                content=content,
+                embed=embed,
+                allowed_mentions=allowed_mentions,
+            )
+            record_alt_flag_logged(report)
+            return True
+        except discord.HTTPException as exc:
+            print(f"[logging.py] Failed to send altcheck log: {exc}")
+            return False
+
+    # ------------------------------------------------------------
     # Message logs
     # ------------------------------------------------------------
 
@@ -792,6 +934,16 @@ class Logging(commands.Cog):
 
         if not message.content:
             return
+
+        record_user_profile(message.author, guild_id=message.guild.id)
+        recorded_language = record_message_language(message)
+
+        if recorded_language:
+            await self.maybe_alt_flag(
+                guild=message.guild,
+                user=message.author,
+                source=f"Message-language sample in #{getattr(message.channel, 'name', 'unknown')}",
+            )
 
         flagged_terms = load_flagged_terms_from_file(config.SWEARS_FILE)
         flagged_re = current_flagged_regex()
@@ -990,6 +1142,9 @@ class Logging(commands.Cog):
         if not self.should_log_guild(guild):
             return
 
+        record_user_profile(user, guild_id=guild.id)
+        mark_known_ban(user.id, guild.id, active=True)
+
         fields = [
             ("Target", format_user(user), False),
         ]
@@ -1010,6 +1165,8 @@ class Logging(commands.Cog):
         if not self.should_log_guild(guild):
             return
 
+        mark_known_ban(user.id, guild.id, active=False)
+
         fields = [
             ("Target", format_user(user), False),
         ]
@@ -1029,6 +1186,8 @@ class Logging(commands.Cog):
     async def on_member_remove(self, member: discord.Member):
         if not self.should_log_guild(member.guild):
             return
+
+        record_user_profile(member, guild_id=member.guild.id)
 
         kick_entry = await self.find_audit_entry(
             member.guild,
@@ -1076,6 +1235,15 @@ class Logging(commands.Cog):
     async def on_member_join(self, member: discord.Member):
         if not self.should_log_guild(member.guild):
             return
+
+        record_user_profile(member, guild_id=member.guild.id)
+
+        await self.maybe_alt_flag(
+            guild=member.guild,
+            user=member,
+            source="Server join",
+            force=True,
+        )
 
         await self.send_log(
             category="joins",
@@ -1131,6 +1299,15 @@ class Logging(commands.Cog):
             )
 
         if before.nick != after.nick:
+            record_user_profile(after, guild_id=after.guild.id)
+
+            await self.maybe_alt_flag(
+                guild=after.guild,
+                user=after,
+                source="Nickname changed",
+                force=True,
+            )
+
             await self.send_log(
                 category="user",
                 guild=after.guild,
@@ -1232,6 +1409,15 @@ class Logging(commands.Cog):
 
         for guild in self.bot.guilds:
             if guild.get_member(after.id) and self.should_log_guild(guild):
+                record_user_profile(after, guild_id=guild.id)
+
+                await self.maybe_alt_flag(
+                    guild=guild,
+                    user=after,
+                    source="Username/profile changed",
+                    force=True,
+                )
+
                 await self.send_log(
                     category="user",
                     guild=guild,

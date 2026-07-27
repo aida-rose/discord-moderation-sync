@@ -75,6 +75,10 @@ SETTING_DEFAULTS: dict[str, str] = {
     "APPEAL_URL": "",
     "ENABLE_NATION_SELECTOR": "false",
     "ENABLE_TICKETS": "false",
+    "ENABLE_WHITELIST": "false",
+    "ENABLE_MC_WHITELIST": "false",
+    "WHITELIST_ROLE_ID": "0",
+    "BEDROCK_USERNAME_PREFIX": ".",
     "LOG_MODERATION_THREAD_ID": "0",
     "LOG_SERVER_MANAGEMENT_THREAD_ID": "0",
     "LOG_INVITE_THREAD_ID": "0",
@@ -84,6 +88,7 @@ SETTING_DEFAULTS: dict[str, str] = {
     "LOG_MESSAGE_THREAD_ID": "0",
     "LOG_VC_THREAD_ID": "0",
     "LOG_JOINS_THREAD_ID": "0",
+    "LOG_WHITELIST_THREAD_ID": "0",
     "LOG_OTHER_THREAD_ID": "0",
     "LOG_ROLE_MANAGEMENT_THREAD_ID": "0",
     "SELF_LOG_THREAD_ID": "0",
@@ -123,6 +128,11 @@ SETTING_DESCRIPTIONS: dict[str, str] = {
     "APPEAL_URL": "Appeal/questions URL shown in user notices.",
     "ENABLE_NATION_SELECTOR": "Whether to load the nation selector cog on startup.",
     "ENABLE_TICKETS": "Whether to load the tickets cog on startup.",
+    "ENABLE_WHITELIST": "Whether Discord whitelist/linking interactions are enabled.",
+    "ENABLE_MC_WHITELIST": "Whether verified links should be synced to the Minecraft whitelist through RCON.",
+    "WHITELIST_ROLE_ID": "Discord role ID granted to linked whitelist users.",
+    "BEDROCK_USERNAME_PREFIX": "Geyser/Floodgate prefix used for Bedrock players on the Java server.",
+    "LOG_WHITELIST_THREAD_ID": "Thread/channel ID for Minecraft whitelist logs.",
     "SWEARS_FILE": "File path for flagged message terms.",
     "FLAGGED_MESSAGE_REGEX": "Optional regex for flagged-message logging.",
 }
@@ -143,6 +153,10 @@ ENV_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "APPEAL_URL": ("ESMP_APPEAL_URL", "APPEAL_URL"),
     "ENABLE_NATION_SELECTOR": ("ENABLE_NATION_SELECTOR",),
     "ENABLE_TICKETS": ("ENABLE_TICKETS",),
+    "ENABLE_WHITELIST": ("ENABLE_WHITELIST",),
+    "ENABLE_MC_WHITELIST": ("ENABLE_MC_WHITELIST",),
+    "WHITELIST_ROLE_ID": ("WHITELIST_ROLE_ID",),
+    "BEDROCK_USERNAME_PREFIX": ("BEDROCK_USERNAME_PREFIX",),
     "LOGGED_GUILD_IDS": ("LOGGED_GUILD_IDS",),
     "PRIMARY_JOIN_ROLE_ID": ("PRIMARY_JOIN_ROLE_ID",),
     "LOG_MODERATION_THREAD_ID": ("LOG_MODERATION_THREAD_ID",),
@@ -154,6 +168,7 @@ ENV_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "LOG_MESSAGE_THREAD_ID": ("LOG_MESSAGE_THREAD_ID",),
     "LOG_VC_THREAD_ID": ("LOG_VC_THREAD_ID",),
     "LOG_JOINS_THREAD_ID": ("LOG_JOINS_THREAD_ID",),
+    "LOG_WHITELIST_THREAD_ID": ("LOG_WHITELIST_THREAD_ID",),
     "LOG_OTHER_THREAD_ID": ("LOG_OTHER_THREAD_ID",),
     "LOG_ROLE_MANAGEMENT_THREAD_ID": ("LOG_ROLE_MANAGEMENT_THREAD_ID",),
     "SELF_LOG_THREAD_ID": ("SELF_LOG_THREAD_ID",),
@@ -350,6 +365,10 @@ def reload_settings() -> None:
     global APPEAL_URL
     global ENABLE_NATION_SELECTOR
     global ENABLE_TICKETS
+    global ENABLE_WHITELIST
+    global ENABLE_MC_WHITELIST
+    global WHITELIST_ROLE_ID
+    global BEDROCK_USERNAME_PREFIX
     global LOG_MODERATION_THREAD_ID
     global LOG_SERVER_MANAGEMENT_THREAD_ID
     global LOG_INVITE_THREAD_ID
@@ -359,6 +378,7 @@ def reload_settings() -> None:
     global LOG_MESSAGE_THREAD_ID
     global LOG_VC_THREAD_ID
     global LOG_JOINS_THREAD_ID
+    global LOG_WHITELIST_THREAD_ID
     global LOG_OTHER_THREAD_ID
     global LOG_ROLE_MANAGEMENT_THREAD_ID
     global SELF_LOG_THREAD_ID
@@ -386,6 +406,10 @@ def reload_settings() -> None:
     APPEAL_URL = get_setting("APPEAL_URL").strip()
     ENABLE_NATION_SELECTOR = _bool_setting("ENABLE_NATION_SELECTOR")
     ENABLE_TICKETS = _bool_setting("ENABLE_TICKETS")
+    ENABLE_WHITELIST = _bool_setting("ENABLE_WHITELIST")
+    ENABLE_MC_WHITELIST = _bool_setting("ENABLE_MC_WHITELIST")
+    WHITELIST_ROLE_ID = _int_setting("WHITELIST_ROLE_ID")
+    BEDROCK_USERNAME_PREFIX = get_setting("BEDROCK_USERNAME_PREFIX").strip()
     LOG_MODERATION_THREAD_ID = _int_setting("LOG_MODERATION_THREAD_ID")
     LOG_SERVER_MANAGEMENT_THREAD_ID = _int_setting("LOG_SERVER_MANAGEMENT_THREAD_ID")
     LOG_INVITE_THREAD_ID = _int_setting("LOG_INVITE_THREAD_ID")
@@ -395,6 +419,7 @@ def reload_settings() -> None:
     LOG_MESSAGE_THREAD_ID = _int_setting("LOG_MESSAGE_THREAD_ID")
     LOG_VC_THREAD_ID = _int_setting("LOG_VC_THREAD_ID")
     LOG_JOINS_THREAD_ID = _int_setting("LOG_JOINS_THREAD_ID")
+    LOG_WHITELIST_THREAD_ID = _int_setting("LOG_WHITELIST_THREAD_ID")
     LOG_OTHER_THREAD_ID = _int_setting("LOG_OTHER_THREAD_ID")
     LOG_ROLE_MANAGEMENT_THREAD_ID = _int_setting("LOG_ROLE_MANAGEMENT_THREAD_ID")
     SELF_LOG_THREAD_ID = _int_setting("SELF_LOG_THREAD_ID")

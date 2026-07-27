@@ -20,6 +20,7 @@ CORE_COGS = [
     "cogs.automation",
     "cogs.self_logging",
     "cogs.affiliate_owner",
+    "cogs.whitelist",
 ]
 
 OPTIONAL_COGS = []

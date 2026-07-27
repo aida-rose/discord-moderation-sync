@@ -210,12 +210,6 @@ class Automation(commands.Cog):
         # Auto-role
         # -----------------------------
         if config.PRIMARY_JOIN_ROLE_ID == 0:
-            await self.send_join_log(
-                member.guild,
-                "Join Role Failed",
-                "`PRIMARY_JOIN_ROLE_ID` is not configured.",
-                thumbnail_url=member.display_avatar.url,
-            )
             return
 
         role = member.guild.get_role(config.PRIMARY_JOIN_ROLE_ID)

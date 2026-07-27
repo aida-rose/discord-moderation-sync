@@ -122,7 +122,7 @@ SETTING_DESCRIPTIONS: dict[str, str] = {
     "STAFF_ROLE_IDS": "Comma-separated regular moderation role IDs.",
     "BAN_STAFF_ROLE_IDS": "Comma-separated ban-permission role IDs.",
     "ALT_ALERT_ROLE_ID": "Role ID pinged when altcheck matches a banned account.",
-    "PRIMARY_JOIN_ROLE_ID": "Role ID assigned to new members.",
+    "PRIMARY_JOIN_ROLE_ID": "Optional role ID assigned to new members. Set to 0 to disable.",
     "BAN_PRUNE_SECONDS": "Seconds of messages to delete when banning.",
     "SEND_USER_NOTICES": "Whether punishment notices are DM'd to users.",
     "APPEAL_URL": "Appeal/questions URL shown in user notices.",

@@ -1,7 +1,12 @@
 import asyncio
+import hmac
+import json
 import os
 import re
+import secrets
 import sqlite3
+import urllib.error
+import urllib.request
 from typing import Optional
 
 import discord
@@ -10,6 +15,11 @@ from discord.ext import commands
 
 import config
 from storage import moderation_db
+
+try:
+    from aiohttp import web
+except ImportError:
+    web = None
 
 try:
     from mcrcon import MCRcon
@@ -23,11 +33,17 @@ PLATFORM_LABELS = {
     "bedrock": "Bedrock",
 }
 ACTIVE_STATUS = "linked"
+PENDING_STATUS = "pending_verification"
 ABSENT_STATUS = "discord_absent"
 BANNED_STATUS = "discord_banned"
+VERIFICATION_CODE_LENGTH = 8
 
 
 class LinkExists(Exception):
+    pass
+
+
+class AccountLookupFailed(Exception):
     pass
 
 
@@ -43,11 +59,48 @@ def init_db() -> None:
                 server_name TEXT NOT NULL,
                 server_name_normalized TEXT NOT NULL UNIQUE,
                 status TEXT NOT NULL,
+                verification_code TEXT UNIQUE,
+                minecraft_uuid TEXT,
+                minecraft_xuid TEXT,
+                verified_at TEXT,
+                verification_method TEXT,
+                verification_note TEXT,
                 last_rcon_action TEXT,
                 last_rcon_result TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
+            """
+        )
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(minecraft_account_links)")
+        }
+        migrations = {
+            "verification_code": "ALTER TABLE minecraft_account_links ADD COLUMN verification_code TEXT",
+            "minecraft_uuid": "ALTER TABLE minecraft_account_links ADD COLUMN minecraft_uuid TEXT",
+            "minecraft_xuid": "ALTER TABLE minecraft_account_links ADD COLUMN minecraft_xuid TEXT",
+            "verified_at": "ALTER TABLE minecraft_account_links ADD COLUMN verified_at TEXT",
+            "verification_method": "ALTER TABLE minecraft_account_links ADD COLUMN verification_method TEXT",
+            "verification_note": "ALTER TABLE minecraft_account_links ADD COLUMN verification_note TEXT",
+        }
+
+        for column, statement in migrations.items():
+            if column not in columns:
+                conn.execute(statement)
+
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_minecraft_account_links_verification_code
+            ON minecraft_account_links (verification_code)
+            WHERE verification_code IS NOT NULL
+            """
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_minecraft_account_links_minecraft_uuid
+            ON minecraft_account_links (minecraft_uuid)
+            WHERE minecraft_uuid IS NOT NULL
             """
         )
 
@@ -77,9 +130,47 @@ def clean_player_name(platform: str, raw_name: str) -> str:
     return name
 
 
+def lookup_java_profile(username: str) -> dict[str, str] | None:
+    url = f"https://api.mojang.com/users/profiles/minecraft/{username}"
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "discord-moderation-sync/whitelist"},
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            if response.status == 204:
+                return None
+
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code in {204, 404}:
+            return None
+        raise AccountLookupFailed(f"Mojang lookup failed with HTTP {exc.code}.") from exc
+    except Exception as exc:
+        raise AccountLookupFailed(f"Mojang lookup failed: {type(exc).__name__}: {exc}") from exc
+
+    profile_id = str(data.get("id", "")).strip()
+    profile_name = str(data.get("name", "")).strip()
+
+    if not profile_id or not profile_name:
+        raise AccountLookupFailed("Mojang returned an incomplete profile response.")
+
+    return {
+        "id": profile_id,
+        "name": profile_name,
+    }
+
+
+async def lookup_java_profile_async(username: str) -> dict[str, str] | None:
+    return await asyncio.to_thread(lookup_java_profile, username)
+
+
 def server_whitelist_name(platform: str, entered_name: str) -> str:
     if platform == "bedrock":
-        return f"{config.BEDROCK_USERNAME_PREFIX}{entered_name}"
+        replacement = config.BEDROCK_SPACE_REPLACEMENT
+        bedrock_name = entered_name.replace(" ", replacement)
+        return f"{config.BEDROCK_USERNAME_PREFIX}{bedrock_name}"
 
     return entered_name
 
@@ -92,9 +183,32 @@ def normalize_server_name(name: str) -> str:
     return " ".join(name.strip().split()).casefold()
 
 
+def normalize_uuid(value: object) -> str:
+    return str(value or "").replace("-", "").strip().casefold()
+
+
+def normalize_bedrock_name(value: object) -> str:
+    name = str(value or "").strip()
+    prefix = config.BEDROCK_USERNAME_PREFIX
+
+    if prefix and name.startswith(prefix):
+        name = name[len(prefix):]
+
+    replacement = config.BEDROCK_SPACE_REPLACEMENT
+    if replacement:
+        name = name.replace(replacement, " ")
+
+    return " ".join(name.split()).casefold()
+
+
 def quote_command_arg(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
+
+
+def generate_verification_code() -> str:
+    alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+    return "".join(secrets.choice(alphabet) for _ in range(VERIFICATION_CODE_LENGTH))
 
 
 def truncate(text: str, limit: int = 700) -> str:
@@ -106,11 +220,12 @@ def truncate(text: str, limit: int = 700) -> str:
 
 def format_link(row) -> str:
     platform = PLATFORM_LABELS.get(row["platform"], row["platform"])
+    current_server_name = current_link_server_name(row)
     return (
         f"Discord: <@{row['discord_user_id']}> (`{row['discord_user_id']}`)\n"
         f"Platform: `{platform}`\n"
         f"Entered name: `{row['entered_name']}`\n"
-        f"Server whitelist name: `{row['server_name']}`\n"
+        f"Server whitelist name: `{current_server_name}`\n"
         f"Status: `{row['status']}`"
     )
 
@@ -140,6 +255,10 @@ def rcon_failed(result: str) -> bool:
     return result.lower().startswith("minecraft whitelist: failed")
 
 
+def link_is_verified(link) -> bool:
+    return bool(link["verified_at"])
+
+
 def get_link_for_discord(discord_user_id: int):
     with moderation_db() as conn:
         return conn.execute(
@@ -152,8 +271,29 @@ def get_link_for_discord(discord_user_id: int):
         ).fetchone()
 
 
-def create_link(discord_user_id: int, platform: str, raw_name: str):
-    entered_name = clean_player_name(platform, raw_name)
+def get_link_for_code(verification_code: str):
+    normalized_code = str(verification_code).strip().upper()
+
+    with moderation_db() as conn:
+        return conn.execute(
+            """
+            SELECT *
+            FROM minecraft_account_links
+            WHERE UPPER(verification_code) = ?
+            """,
+            (normalized_code,),
+        ).fetchone()
+
+
+def create_link(
+    discord_user_id: int,
+    platform: str,
+    raw_name: str,
+    *,
+    minecraft_uuid: Optional[str] = None,
+    canonical_name: Optional[str] = None,
+):
+    entered_name = canonical_name or clean_player_name(platform, raw_name)
     server_name = server_whitelist_name(platform, entered_name)
     normalized = normalize_server_name(server_name)
 
@@ -182,30 +322,70 @@ def create_link(discord_user_id: int, platform: str, raw_name: str):
         if existing_mc is not None:
             raise LinkExists("That Minecraft account is already linked to a Discord account.")
 
-        try:
-            conn.execute(
+        if minecraft_uuid:
+            existing_uuid = conn.execute(
                 """
-                INSERT INTO minecraft_account_links (
-                    discord_user_id,
-                    platform,
-                    entered_name,
-                    server_name,
-                    server_name_normalized,
-                    status
-                )
-                VALUES (?, ?, ?, ?, ?, ?)
+                SELECT *
+                FROM minecraft_account_links
+                WHERE minecraft_uuid = ?
                 """,
-                (
-                    discord_user_id,
-                    platform,
-                    entered_name,
-                    server_name,
-                    normalized,
-                    ACTIVE_STATUS,
-                ),
-            )
-        except sqlite3.IntegrityError as exc:
-            raise LinkExists("That Discord or Minecraft account is already linked.") from exc
+                (minecraft_uuid,),
+            ).fetchone()
+
+            if existing_uuid is not None:
+                raise LinkExists("That Minecraft account is already linked to a Discord account.")
+
+        entered_name_normalized = normalize_server_name(entered_name)
+        same_platform_links = conn.execute(
+            """
+            SELECT entered_name
+            FROM minecraft_account_links
+            WHERE platform = ?
+            """,
+            (platform,),
+        ).fetchall()
+
+        if any(
+            normalize_server_name(row["entered_name"]) == entered_name_normalized
+            for row in same_platform_links
+        ):
+            raise LinkExists("That Minecraft account is already linked to a Discord account.")
+
+        for _ in range(10):
+            verification_code = generate_verification_code()
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO minecraft_account_links (
+                        discord_user_id,
+                        platform,
+                        entered_name,
+                        server_name,
+                        server_name_normalized,
+                        status,
+                        verification_code,
+                        minecraft_uuid
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        discord_user_id,
+                        platform,
+                        entered_name,
+                        server_name,
+                        normalized,
+                        PENDING_STATUS,
+                        verification_code,
+                        minecraft_uuid,
+                    ),
+                )
+                break
+            except sqlite3.IntegrityError as exc:
+                if "verification_code" in str(exc).lower():
+                    continue
+                raise LinkExists("That Discord or Minecraft account is already linked.") from exc
+        else:
+            raise LinkExists("Could not create a unique verification code. Please try again.")
 
     return get_link_for_discord(discord_user_id)
 
@@ -240,6 +420,139 @@ def delete_link(discord_user_id: int) -> None:
             """,
             (discord_user_id,),
         )
+
+
+def verify_link(
+    discord_user_id: int,
+    verification_code: str,
+    *,
+    method: str,
+    note: str,
+):
+    normalized_code = str(verification_code).strip().upper()
+
+    with moderation_db() as conn:
+        link = conn.execute(
+            """
+            SELECT *
+            FROM minecraft_account_links
+            WHERE discord_user_id = ?
+            """,
+            (discord_user_id,),
+        ).fetchone()
+
+        if link is None:
+            raise ValueError("That user does not have an account link.")
+
+        if link["verified_at"]:
+            raise ValueError("That account link is already verified.")
+
+        expected_code = str(link["verification_code"] or "").strip().upper()
+        if not expected_code or normalized_code != expected_code:
+            raise ValueError("That verification code does not match the pending account link.")
+
+        conn.execute(
+            """
+            UPDATE minecraft_account_links
+            SET status = ?,
+                verification_code = NULL,
+                verified_at = CURRENT_TIMESTAMP,
+                verification_method = ?,
+                verification_note = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE discord_user_id = ?
+            """,
+            (ACTIVE_STATUS, method, note, discord_user_id),
+        )
+
+    return get_link_for_discord(discord_user_id)
+
+
+def verify_link_from_minecraft(payload: dict):
+    code = str(payload.get("code") or "").strip().upper()
+    platform = str(payload.get("platform") or "").strip().lower()
+    player_name = str(payload.get("player_name") or "").strip()
+    player_uuid = str(payload.get("player_uuid") or "").strip()
+    bedrock_username = str(payload.get("bedrock_username") or "").strip()
+    xuid = str(payload.get("xuid") or "").strip()
+    is_bedrock = bool(payload.get("is_bedrock"))
+
+    if not code:
+        raise ValueError("Missing verification code.")
+
+    if platform not in PLATFORM_LABELS:
+        raise ValueError("Invalid or missing platform.")
+
+    if not player_name or not player_uuid:
+        raise ValueError("Missing player name or UUID.")
+
+    link = get_link_for_code(code)
+
+    if link is None:
+        raise ValueError("That verification code was not found.")
+
+    if link["verified_at"]:
+        raise ValueError("That account link is already verified.")
+
+    if link["platform"] != platform:
+        raise ValueError(f"That code is for {PLATFORM_LABELS[link['platform']]}, not {PLATFORM_LABELS[platform]}.")
+
+    if platform == "java":
+        if is_bedrock:
+            raise ValueError("That code is for a Java account, but the player joined through Floodgate/Bedrock.")
+
+        expected_uuid = normalize_uuid(link["minecraft_uuid"])
+        actual_uuid = normalize_uuid(player_uuid)
+
+        if expected_uuid and expected_uuid != actual_uuid:
+            raise ValueError("The in-game Java UUID does not match the submitted Java account.")
+
+    else:
+        if not is_bedrock:
+            raise ValueError("That code is for a Bedrock account, but the player did not join through Floodgate.")
+
+        actual_name = bedrock_username or player_name
+        if normalize_bedrock_name(actual_name) != normalize_bedrock_name(link["entered_name"]):
+            raise ValueError("The in-game Bedrock gamertag does not match the submitted Bedrock account.")
+
+    with moderation_db() as conn:
+        existing_uuid = conn.execute(
+            """
+            SELECT discord_user_id
+            FROM minecraft_account_links
+            WHERE minecraft_uuid = ?
+              AND discord_user_id != ?
+            """,
+            (normalize_uuid(player_uuid), link["discord_user_id"]),
+        ).fetchone()
+
+        if existing_uuid is not None:
+            raise ValueError("That Minecraft UUID is already linked to another Discord account.")
+
+        conn.execute(
+            """
+            UPDATE minecraft_account_links
+            SET status = ?,
+                verification_code = NULL,
+                minecraft_uuid = ?,
+                minecraft_xuid = ?,
+                verified_at = CURRENT_TIMESTAMP,
+                verification_method = ?,
+                verification_note = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE discord_user_id = ?
+            """,
+            (
+                ACTIVE_STATUS,
+                normalize_uuid(player_uuid),
+                xuid or None,
+                "verification_server",
+                f"Verified by {player_name} on the Minecraft verification server.",
+                link["discord_user_id"],
+            ),
+        )
+
+    return get_link_for_discord(link["discord_user_id"])
 
 
 def all_links():
@@ -342,33 +655,64 @@ class MinecraftNameModal(discord.ui.Modal):
         await interaction.response.defer(ephemeral=True)
 
         try:
-            link = create_link(interaction.user.id, self.platform, str(self.player_name.value))
-        except (ValueError, LinkExists) as exc:
+            entered_name = clean_player_name(self.platform, str(self.player_name.value))
+        except ValueError as exc:
             await interaction.followup.send(str(exc), ephemeral=True)
             return
 
-        role_result = await self.cog.apply_whitelist_role(interaction.guild, interaction.user)
-        rcon_result = await self.cog.add_mc_whitelist(link)
+        java_profile = None
+        if self.platform == "java":
+            try:
+                java_profile = await lookup_java_profile_async(entered_name)
+            except AccountLookupFailed as exc:
+                await interaction.followup.send(
+                    (
+                        "I could not verify that Java account with Mojang right now. "
+                        f"Please try again later.\n\n`{exc}`"
+                    ),
+                    ephemeral=True,
+                )
+                return
+
+            if java_profile is None:
+                await interaction.followup.send(
+                    f"`{entered_name}` does not appear to be an existing Java account.",
+                    ephemeral=True,
+                )
+                return
+
+        try:
+            link = create_link(
+                interaction.user.id,
+                self.platform,
+                entered_name,
+                minecraft_uuid=java_profile["id"] if java_profile else None,
+                canonical_name=java_profile["name"] if java_profile else None,
+            )
+        except LinkExists as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
 
         await self.cog.send_whitelist_log(
             guild=interaction.guild,
-            title="Whitelist Account Linked",
+            title="Whitelist Verification Started",
             user=interaction.user,
             fields=[
                 ("Link", format_link(link), False),
-                ("Discord Role", role_result, False),
-                ("Minecraft RCON", rcon_result, False),
+                ("Java UUID", link["minecraft_uuid"] or "Pending in-game verification", False),
             ],
-            color=discord.Color.green(),
+            color=discord.Color.orange(),
         )
 
         details = [
-            "Your account link was saved.",
+            "Your account link was saved, but it is not verified yet.",
             "",
             format_link(link),
             "",
-            role_result,
-            rcon_result,
+            f"Verification code: `{link['verification_code']}`",
+            "",
+            "When the Minecraft server is ready, join with that account and give this code to staff or run the server link command.",
+            "You will get the Discord whitelist role after the account is verified.",
         ]
 
         await interaction.followup.send("\n".join(details), ephemeral=True)
@@ -377,6 +721,153 @@ class MinecraftNameModal(discord.ui.Modal):
 class Whitelist(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.verify_api_runner = None
+        self.verify_api_site = None
+
+    async def cog_load(self):
+        await self.start_verify_api()
+
+    def cog_unload(self):
+        if self.verify_api_runner is not None:
+            self.bot.loop.create_task(self.stop_verify_api())
+
+    async def start_verify_api(self) -> None:
+        if not config.ENABLE_MC_VERIFY_API:
+            return
+
+        if web is None:
+            print("[whitelist.py] MC verification API disabled because aiohttp is not installed.")
+            return
+
+        token = os.getenv("MC_VERIFY_API_TOKEN", "")
+        if not token:
+            print("[whitelist.py] MC verification API disabled because MC_VERIFY_API_TOKEN is missing.")
+            return
+
+        host = os.getenv("MC_VERIFY_API_HOST", "127.0.0.1")
+        try:
+            port = int(os.getenv("MC_VERIFY_API_PORT", "8765"))
+        except ValueError:
+            print("[whitelist.py] MC verification API disabled because MC_VERIFY_API_PORT is invalid.")
+            return
+
+        app = web.Application()
+        app.router.add_post("/minecraft/verify", self.handle_minecraft_verify)
+
+        self.verify_api_runner = web.AppRunner(app)
+        await self.verify_api_runner.setup()
+        self.verify_api_site = web.TCPSite(self.verify_api_runner, host, port)
+        await self.verify_api_site.start()
+
+        print(f"[whitelist.py] MC verification API listening on {host}:{port}")
+
+    async def stop_verify_api(self) -> None:
+        if self.verify_api_runner is None:
+            return
+
+        await self.verify_api_runner.cleanup()
+        self.verify_api_runner = None
+        self.verify_api_site = None
+
+    def verify_api_authorized(self, request) -> bool:
+        expected = os.getenv("MC_VERIFY_API_TOKEN", "")
+        provided = request.headers.get("X-MC-Verify-Token", "")
+
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            provided = auth_header[7:].strip()
+
+        return bool(expected) and hmac.compare_digest(provided, expected)
+
+    async def handle_minecraft_verify(self, request):
+        if not self.verify_api_authorized(request):
+            return web.json_response(
+                {
+                    "ok": False,
+                    "message": "Unauthorized.",
+                    "kick": False,
+                },
+                status=401,
+            )
+
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response(
+                {
+                    "ok": False,
+                    "message": "Invalid JSON payload.",
+                    "kick": False,
+                },
+                status=400,
+            )
+
+        try:
+            link = verify_link_from_minecraft(payload)
+        except ValueError as exc:
+            return web.json_response(
+                {
+                    "ok": False,
+                    "message": str(exc),
+                    "kick": False,
+                },
+                status=400,
+            )
+
+        guild = self.bot.get_guild(config.HOME_GUILD_ID) if config.HOME_GUILD_ID else None
+        user = None
+        member = None
+
+        if guild is not None:
+            member = guild.get_member(link["discord_user_id"])
+            if member is None:
+                try:
+                    member = await guild.fetch_member(link["discord_user_id"])
+                except discord.NotFound:
+                    member = None
+                except discord.HTTPException:
+                    member = None
+
+        if member is not None:
+            user = member
+        else:
+            try:
+                user = await self.bot.fetch_user(link["discord_user_id"])
+            except discord.HTTPException:
+                user = None
+
+        if member is None:
+            set_link_status(link["discord_user_id"], ABSENT_STATUS)
+            role_result = "Discord role: skipped because the user is not in the Discord server."
+            rcon_result = "Minecraft whitelist: skipped because the user is not in the Discord server."
+        else:
+            role_result, rcon_result = await self.finalize_verified_link(guild, member, link)
+
+        await self.send_whitelist_log(
+            guild=guild,
+            title="Whitelist Account Verified By Minecraft",
+            user=user,
+            user_id=link["discord_user_id"],
+            fields=[
+                ("Link", format_link(get_link_for_discord(link["discord_user_id"]) or link), False),
+                ("Minecraft Player", str(payload.get("player_name") or "Unknown"), True),
+                ("Floodgate Bedrock", str(bool(payload.get("is_bedrock"))), True),
+                ("Discord Role", role_result, False),
+                ("Minecraft RCON", rcon_result, False),
+            ],
+            color=discord.Color.green(),
+        )
+
+        return web.json_response(
+            {
+                "ok": True,
+                "message": "Your Minecraft account is linked. You can leave this verification server now.",
+                "kick": True,
+                "discord_user_id": link["discord_user_id"],
+                "role_result": role_result,
+                "rcon_result": rcon_result,
+            }
+        )
 
     def whitelist_available(self, interaction: discord.Interaction) -> bool:
         if not config.ENABLE_WHITELIST:
@@ -631,6 +1122,24 @@ class Whitelist(commands.Cog):
         )
         return result
 
+    async def finalize_verified_link(
+        self,
+        guild: Optional[discord.Guild],
+        user: discord.User | discord.Member,
+        link,
+    ) -> tuple[str, str]:
+        rcon_result = await self.add_mc_whitelist(link)
+
+        if config.ENABLE_MC_WHITELIST and rcon_failed(rcon_result):
+            role_result = (
+                "Discord role: skipped because Minecraft RCON whitelist failed. "
+                "Run `/whitelist_sync` after fixing RCON."
+            )
+            return role_result, rcon_result
+
+        role_result = await self.apply_whitelist_role(guild, user)
+        return role_result, rcon_result
+
     @app_commands.command(
         name="whitelist_panel",
         description="Send the Minecraft whitelist linking panel.",
@@ -703,7 +1212,11 @@ class Whitelist(commands.Cog):
             )
             return
 
-        rcon_result = await self.remove_mc_whitelist(link, status="admin_unlinked")
+        if link_is_verified(link):
+            rcon_result = await self.remove_mc_whitelist(link, status="admin_unlinked")
+        else:
+            rcon_result = "Minecraft whitelist: skipped because the account link was not verified."
+
         role_result = await self.remove_whitelist_role(
             interaction.guild,
             user.id,
@@ -736,6 +1249,68 @@ class Whitelist(commands.Cog):
         )
 
     @app_commands.command(
+        name="whitelist_verify",
+        description="Verify a pending Minecraft account link after the user proves the code in-game.",
+    )
+    @app_commands.describe(
+        user="Discord user whose pending link should be verified.",
+        code="Verification code the user proved in-game.",
+        note="Optional note about how ownership was verified.",
+    )
+    async def whitelist_verify(
+        self,
+        interaction: discord.Interaction,
+        user: discord.User,
+        code: str,
+        note: str = "Verified manually by staff.",
+    ):
+        if not await self.admin_check(interaction):
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            link = verify_link(
+                user.id,
+                code,
+                method="manual_staff",
+                note=note,
+            )
+        except ValueError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+
+        role_result, rcon_result = await self.finalize_verified_link(
+            interaction.guild,
+            user,
+            link,
+        )
+
+        await self.send_whitelist_log(
+            guild=interaction.guild,
+            title="Whitelist Account Verified",
+            user=user,
+            fields=[
+                ("Admin", format_user(interaction.user), False),
+                ("Link", format_link(link), False),
+                ("Discord Role", role_result, False),
+                ("Minecraft RCON", rcon_result, False),
+                ("Verification Note", note, False),
+            ],
+            color=discord.Color.green(),
+        )
+
+        await interaction.followup.send(
+            (
+                "Verified account link.\n\n"
+                f"{format_link(link)}\n\n"
+                f"{role_result}\n"
+                f"{rcon_result}"
+            ),
+            ephemeral=True,
+        )
+
+    @app_commands.command(
         name="whitelist_status",
         description="Show a user's Minecraft account link status.",
     )
@@ -758,8 +1333,26 @@ class Whitelist(commands.Cog):
             )
             return
 
+        details = [format_link(link)]
+
+        if link["verification_code"]:
+            details.append(f"Verification code: `{link['verification_code']}`")
+
+        if link["minecraft_uuid"]:
+            details.append(f"Minecraft UUID: `{link['minecraft_uuid']}`")
+
+        if link["minecraft_xuid"]:
+            details.append(f"Bedrock XUID: `{link['minecraft_xuid']}`")
+
+        if link["verified_at"]:
+            details.append(f"Verified at: `{link['verified_at']}`")
+            details.append(f"Verification method: `{link['verification_method'] or 'unknown'}`")
+
+        if link["verification_note"]:
+            details.append(f"Verification note: `{link['verification_note']}`")
+
         await interaction.response.send_message(
-            format_link(link),
+            "\n".join(details),
             ephemeral=True,
         )
 
@@ -826,10 +1419,15 @@ class Whitelist(commands.Cog):
         links = all_links()
         present = 0
         absent = 0
+        pending = 0
         role_failures = 0
         rcon_failures = 0
 
         for link in links:
+            if not link_is_verified(link):
+                pending += 1
+                continue
+
             member = guild.get_member(link["discord_user_id"]) if guild is not None else None
 
             if member is None and guild is not None:
@@ -861,6 +1459,7 @@ class Whitelist(commands.Cog):
                 "Whitelist sync complete.\n"
                 f"Linked members present: `{present}`\n"
                 f"Linked users absent: `{absent}`\n"
+                f"Pending verification: `{pending}`\n"
                 f"Role failures: `{role_failures}`\n"
                 f"RCON failures: `{rcon_failures}`\n"
                 f"Minecraft RCON enabled: `{config.ENABLE_MC_WHITELIST}`"
@@ -875,6 +1474,7 @@ class Whitelist(commands.Cog):
             fields=[
                 ("Linked Members Present", str(present), True),
                 ("Linked Users Absent", str(absent), True),
+                ("Pending Verification", str(pending), True),
                 ("Role Failures", str(role_failures), True),
                 ("RCON Failures", str(rcon_failures), True),
                 ("Minecraft RCON Enabled", str(config.ENABLE_MC_WHITELIST), True),
@@ -889,6 +1489,9 @@ class Whitelist(commands.Cog):
 
         link = get_link_for_discord(member.id)
         if link is None:
+            return
+
+        if not link_is_verified(link):
             return
 
         result = await self.remove_mc_whitelist(link, status=ABSENT_STATUS)
@@ -913,6 +1516,9 @@ class Whitelist(commands.Cog):
         if link is None:
             return
 
+        if not link_is_verified(link):
+            return
+
         result = await self.remove_mc_whitelist(link, status=BANNED_STATUS)
         await self.send_whitelist_log(
             guild=guild,
@@ -933,6 +1539,9 @@ class Whitelist(commands.Cog):
 
         link = get_link_for_discord(member.id)
         if link is None:
+            return
+
+        if not link_is_verified(link):
             return
 
         role_result = await self.apply_whitelist_role(member.guild, member)

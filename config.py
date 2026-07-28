@@ -77,8 +77,10 @@ SETTING_DEFAULTS: dict[str, str] = {
     "ENABLE_TICKETS": "false",
     "ENABLE_WHITELIST": "false",
     "ENABLE_MC_WHITELIST": "false",
+    "ENABLE_MC_VERIFY_API": "false",
     "WHITELIST_ROLE_ID": "0",
     "BEDROCK_USERNAME_PREFIX": ".",
+    "BEDROCK_SPACE_REPLACEMENT": "_",
     "LOG_MODERATION_THREAD_ID": "0",
     "LOG_SERVER_MANAGEMENT_THREAD_ID": "0",
     "LOG_INVITE_THREAD_ID": "0",
@@ -130,8 +132,10 @@ SETTING_DESCRIPTIONS: dict[str, str] = {
     "ENABLE_TICKETS": "Whether to load the tickets cog on startup.",
     "ENABLE_WHITELIST": "Whether Discord whitelist/linking interactions are enabled.",
     "ENABLE_MC_WHITELIST": "Whether verified links should be synced to the Minecraft whitelist through RCON.",
+    "ENABLE_MC_VERIFY_API": "Whether to start the private Minecraft verification API used by the verification server plugin.",
     "WHITELIST_ROLE_ID": "Discord role ID granted to linked whitelist users.",
     "BEDROCK_USERNAME_PREFIX": "Geyser/Floodgate prefix used for Bedrock players on the Java server.",
+    "BEDROCK_SPACE_REPLACEMENT": "Replacement used for spaces in Bedrock names on the Java server.",
     "LOG_WHITELIST_THREAD_ID": "Thread/channel ID for Minecraft whitelist logs.",
     "SWEARS_FILE": "File path for flagged message terms.",
     "FLAGGED_MESSAGE_REGEX": "Optional regex for flagged-message logging.",
@@ -155,8 +159,10 @@ ENV_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "ENABLE_TICKETS": ("ENABLE_TICKETS",),
     "ENABLE_WHITELIST": ("ENABLE_WHITELIST",),
     "ENABLE_MC_WHITELIST": ("ENABLE_MC_WHITELIST",),
+    "ENABLE_MC_VERIFY_API": ("ENABLE_MC_VERIFY_API",),
     "WHITELIST_ROLE_ID": ("WHITELIST_ROLE_ID",),
     "BEDROCK_USERNAME_PREFIX": ("BEDROCK_USERNAME_PREFIX",),
+    "BEDROCK_SPACE_REPLACEMENT": ("BEDROCK_SPACE_REPLACEMENT",),
     "LOGGED_GUILD_IDS": ("LOGGED_GUILD_IDS",),
     "PRIMARY_JOIN_ROLE_ID": ("PRIMARY_JOIN_ROLE_ID",),
     "LOG_MODERATION_THREAD_ID": ("LOG_MODERATION_THREAD_ID",),
@@ -367,8 +373,10 @@ def reload_settings() -> None:
     global ENABLE_TICKETS
     global ENABLE_WHITELIST
     global ENABLE_MC_WHITELIST
+    global ENABLE_MC_VERIFY_API
     global WHITELIST_ROLE_ID
     global BEDROCK_USERNAME_PREFIX
+    global BEDROCK_SPACE_REPLACEMENT
     global LOG_MODERATION_THREAD_ID
     global LOG_SERVER_MANAGEMENT_THREAD_ID
     global LOG_INVITE_THREAD_ID
@@ -408,8 +416,10 @@ def reload_settings() -> None:
     ENABLE_TICKETS = _bool_setting("ENABLE_TICKETS")
     ENABLE_WHITELIST = _bool_setting("ENABLE_WHITELIST")
     ENABLE_MC_WHITELIST = _bool_setting("ENABLE_MC_WHITELIST")
+    ENABLE_MC_VERIFY_API = _bool_setting("ENABLE_MC_VERIFY_API")
     WHITELIST_ROLE_ID = _int_setting("WHITELIST_ROLE_ID")
     BEDROCK_USERNAME_PREFIX = get_setting("BEDROCK_USERNAME_PREFIX").strip()
+    BEDROCK_SPACE_REPLACEMENT = get_setting("BEDROCK_SPACE_REPLACEMENT")
     LOG_MODERATION_THREAD_ID = _int_setting("LOG_MODERATION_THREAD_ID")
     LOG_SERVER_MANAGEMENT_THREAD_ID = _int_setting("LOG_SERVER_MANAGEMENT_THREAD_ID")
     LOG_INVITE_THREAD_ID = _int_setting("LOG_INVITE_THREAD_ID")

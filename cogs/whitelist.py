@@ -84,6 +84,10 @@ def server_whitelist_name(platform: str, entered_name: str) -> str:
     return entered_name
 
 
+def current_link_server_name(link) -> str:
+    return server_whitelist_name(link["platform"], link["entered_name"])
+
+
 def normalize_server_name(name: str) -> str:
     return " ".join(name.strip().split()).casefold()
 
@@ -606,7 +610,7 @@ class Whitelist(commands.Cog):
         return f"Minecraft whitelist: `{command}` -> `{truncate(result)}`"
 
     async def add_mc_whitelist(self, link) -> str:
-        command = f"whitelist add {quote_command_arg(link['server_name'])}"
+        command = f"whitelist add {quote_command_arg(current_link_server_name(link))}"
         result = await self.rcon_command(command)
         set_link_status(
             link["discord_user_id"],
@@ -617,7 +621,7 @@ class Whitelist(commands.Cog):
         return result
 
     async def remove_mc_whitelist(self, link, *, status: str) -> str:
-        command = f"whitelist remove {quote_command_arg(link['server_name'])}"
+        command = f"whitelist remove {quote_command_arg(current_link_server_name(link))}"
         result = await self.rcon_command(command)
         set_link_status(
             link["discord_user_id"],
@@ -756,6 +760,55 @@ class Whitelist(commands.Cog):
 
         await interaction.response.send_message(
             format_link(link),
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="whitelist_dryrun",
+        description="Preview validation and RCON commands without saving an account link.",
+    )
+    @app_commands.describe(
+        platform="Minecraft edition to test.",
+        name="Minecraft username or Bedrock gamertag to test.",
+    )
+    @app_commands.choices(
+        platform=[
+            app_commands.Choice(name="Java", value="java"),
+            app_commands.Choice(name="Bedrock", value="bedrock"),
+        ]
+    )
+    async def whitelist_dryrun(
+        self,
+        interaction: discord.Interaction,
+        platform: app_commands.Choice[str],
+        name: str,
+    ):
+        if not await self.admin_check(interaction):
+            return
+
+        try:
+            entered_name = clean_player_name(platform.value, name)
+        except ValueError as exc:
+            await interaction.response.send_message(
+                f"Validation failed: {exc}",
+                ephemeral=True,
+            )
+            return
+
+        server_name = server_whitelist_name(platform.value, entered_name)
+        add_command = f"whitelist add {quote_command_arg(server_name)}"
+        remove_command = f"whitelist remove {quote_command_arg(server_name)}"
+
+        await interaction.response.send_message(
+            (
+                "Dry run only. No link was saved and no RCON command was sent.\n\n"
+                f"Platform: `{PLATFORM_LABELS[platform.value]}`\n"
+                f"Entered name: `{entered_name}`\n"
+                f"Server whitelist name: `{server_name}`\n"
+                f"Add command: `{add_command}`\n"
+                f"Remove command: `{remove_command}`\n"
+                f"RCON enabled: `{config.ENABLE_MC_WHITELIST}`"
+            ),
             ephemeral=True,
         )
 

@@ -6,5 +6,7 @@ services:
     env_file:
       - path: .env
         required: false
+    ports:
+      - "${MC_VERIFY_API_PORT:-8765}:${MC_VERIFY_API_PORT:-8765}"
     volumes:
       - ./data:/app/data

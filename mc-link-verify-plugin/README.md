@@ -75,11 +75,12 @@ MC_VERIFY_API_TOKEN=use-a-long-random-secret
 In Discord:
 
 ```text
+/config_set ENABLE_WHITELIST_SYSTEM true
 /config_set ENABLE_WHITELIST true
 /config_set ENABLE_MC_VERIFY_API true
 ```
 
-Restart the bot after enabling the verification API.
+Restart the bot after enabling `ENABLE_WHITELIST_SYSTEM`.
 
 If the main Minecraft server is ready, also configure RCON and run:
 

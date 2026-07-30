@@ -21,6 +21,7 @@ BOOL_SETTINGS = {
     "SEND_USER_NOTICES",
     "ENABLE_NATION_SELECTOR",
     "ENABLE_TICKETS",
+    "ENABLE_WHITELIST_SYSTEM",
     "ENABLE_WHITELIST",
     "ENABLE_MC_WHITELIST",
     "ENABLE_MC_VERIFY_API",
@@ -624,7 +625,7 @@ class Owner(commands.Cog):
             self.bot.command_prefix = normalized
 
         restart_note = ""
-        if key in {"ENABLE_NATION_SELECTOR", "ENABLE_TICKETS"}:
+        if key in {"ENABLE_NATION_SELECTOR", "ENABLE_TICKETS", "ENABLE_WHITELIST_SYSTEM"}:
             restart_note = "\nRestart the bot for cog loading changes to apply."
 
         await interaction.response.send_message(

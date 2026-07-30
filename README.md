@@ -21,6 +21,7 @@ This bot is intended for use by a controlled network of approved servers. It is 
 - Privacy-preserving altcheck scoring from public profile and language patterns
 - Join guard / account age protection
 - Runtime affiliate management commands for bot owners
+- Optional ticket system with category dropdowns, close/archive flow, transcripts, and media logs
 - Role-based command permissions
 - Owner-only bot management commands
 
@@ -34,6 +35,15 @@ The `.env` file only needs:
 All other bot settings are stored in `data/moderation.sqlite3` and managed through owner-only slash commands such as `/config_set`, `/config_id_add`, `/config_id_remove`, `/config_get`, and `/config_list`.
 
 Set `ALT_ALERT_ROLE_ID` with `/config_set` to ping a role when altcheck links a medium/high-risk account to a banned user.
+
+To enable tickets, set `ENABLE_TICKETS` to `true` and restart the bot. Then configure:
+
+- `TICKET_LOG_CHANNEL_ID` for archived `.txt` transcripts
+- `TICKET_IMAGE_LOG_CHANNEL_ID` for forwarded ticket media
+- `TICKET_CLOSED_CATEGORY_ID` for closed ticket channels
+- `TICKET_REPORT_PING_ROLE_ID`, `TICKET_ADMIN_PING_ROLE_ID`, `TICKET_WHITELISTING_PING_ROLE_ID`, `TICKET_DISPUTE_PING_ROLE_ID`, and `TICKET_OTHER_PING_ROLE_ID` for category-specific pings
+
+Use `/ticket_panel` in a text channel inside the Discord category where open tickets should be created.
 
 ## Docker Compose Deployment
 

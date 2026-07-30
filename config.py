@@ -75,6 +75,15 @@ SETTING_DEFAULTS: dict[str, str] = {
     "APPEAL_URL": "",
     "ENABLE_NATION_SELECTOR": "false",
     "ENABLE_TICKETS": "false",
+    "TICKET_LOG_CHANNEL_ID": "0",
+    "TICKET_IMAGE_LOG_CHANNEL_ID": "0",
+    "TICKET_CLOSED_CATEGORY_ID": "0",
+    "TICKET_REPORT_PING_ROLE_ID": "0",
+    "TICKET_ADMIN_PING_ROLE_ID": "0",
+    "TICKET_WHITELISTING_PING_ROLE_ID": "0",
+    "TICKET_DISPUTE_PING_ROLE_ID": "0",
+    "TICKET_OTHER_PING_ROLE_ID": "0",
+    "ENABLE_WHITELIST_SYSTEM": "false",
     "ENABLE_WHITELIST": "false",
     "ENABLE_MC_WHITELIST": "false",
     "ENABLE_MC_VERIFY_API": "false",
@@ -130,6 +139,15 @@ SETTING_DESCRIPTIONS: dict[str, str] = {
     "APPEAL_URL": "Appeal/questions URL shown in user notices.",
     "ENABLE_NATION_SELECTOR": "Whether to load the nation selector cog on startup.",
     "ENABLE_TICKETS": "Whether to load the tickets cog on startup.",
+    "TICKET_LOG_CHANNEL_ID": "Channel ID where archived ticket transcripts are posted.",
+    "TICKET_IMAGE_LOG_CHANNEL_ID": "Channel ID where ticket media attachments are forwarded.",
+    "TICKET_CLOSED_CATEGORY_ID": "Discord category ID where closed tickets are moved.",
+    "TICKET_REPORT_PING_ROLE_ID": "Role ID pinged for Report tickets.",
+    "TICKET_ADMIN_PING_ROLE_ID": "Role ID pinged for Admin tickets.",
+    "TICKET_WHITELISTING_PING_ROLE_ID": "Role ID pinged for Whitelisting Issues tickets.",
+    "TICKET_DISPUTE_PING_ROLE_ID": "Role ID pinged for Dispute tickets.",
+    "TICKET_OTHER_PING_ROLE_ID": "Role ID pinged for Other tickets.",
+    "ENABLE_WHITELIST_SYSTEM": "Master switch that loads the Minecraft whitelist cog on startup.",
     "ENABLE_WHITELIST": "Whether Discord whitelist/linking interactions are enabled.",
     "ENABLE_MC_WHITELIST": "Whether verified links should be synced to the Minecraft whitelist through RCON.",
     "ENABLE_MC_VERIFY_API": "Whether to start the private Minecraft verification API used by the verification server plugin.",
@@ -157,6 +175,15 @@ ENV_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "APPEAL_URL": ("ESMP_APPEAL_URL", "APPEAL_URL"),
     "ENABLE_NATION_SELECTOR": ("ENABLE_NATION_SELECTOR",),
     "ENABLE_TICKETS": ("ENABLE_TICKETS",),
+    "TICKET_LOG_CHANNEL_ID": ("TICKET_LOG_CHANNEL_ID", "TICKET_LOGS_CHANNEL_ID"),
+    "TICKET_IMAGE_LOG_CHANNEL_ID": ("TICKET_IMAGE_LOG_CHANNEL_ID", "TICKET_IMAGE_LOGS_CHANNEL_ID"),
+    "TICKET_CLOSED_CATEGORY_ID": ("TICKET_CLOSED_CATEGORY_ID",),
+    "TICKET_REPORT_PING_ROLE_ID": ("TICKET_REPORT_PING_ROLE_ID",),
+    "TICKET_ADMIN_PING_ROLE_ID": ("TICKET_ADMIN_PING_ROLE_ID",),
+    "TICKET_WHITELISTING_PING_ROLE_ID": ("TICKET_WHITELISTING_PING_ROLE_ID",),
+    "TICKET_DISPUTE_PING_ROLE_ID": ("TICKET_DISPUTE_PING_ROLE_ID",),
+    "TICKET_OTHER_PING_ROLE_ID": ("TICKET_OTHER_PING_ROLE_ID",),
+    "ENABLE_WHITELIST_SYSTEM": ("ENABLE_WHITELIST_SYSTEM",),
     "ENABLE_WHITELIST": ("ENABLE_WHITELIST",),
     "ENABLE_MC_WHITELIST": ("ENABLE_MC_WHITELIST",),
     "ENABLE_MC_VERIFY_API": ("ENABLE_MC_VERIFY_API",),
@@ -371,6 +398,15 @@ def reload_settings() -> None:
     global APPEAL_URL
     global ENABLE_NATION_SELECTOR
     global ENABLE_TICKETS
+    global TICKET_LOG_CHANNEL_ID
+    global TICKET_IMAGE_LOG_CHANNEL_ID
+    global TICKET_CLOSED_CATEGORY_ID
+    global TICKET_REPORT_PING_ROLE_ID
+    global TICKET_ADMIN_PING_ROLE_ID
+    global TICKET_WHITELISTING_PING_ROLE_ID
+    global TICKET_DISPUTE_PING_ROLE_ID
+    global TICKET_OTHER_PING_ROLE_ID
+    global ENABLE_WHITELIST_SYSTEM
     global ENABLE_WHITELIST
     global ENABLE_MC_WHITELIST
     global ENABLE_MC_VERIFY_API
@@ -414,6 +450,15 @@ def reload_settings() -> None:
     APPEAL_URL = get_setting("APPEAL_URL").strip()
     ENABLE_NATION_SELECTOR = _bool_setting("ENABLE_NATION_SELECTOR")
     ENABLE_TICKETS = _bool_setting("ENABLE_TICKETS")
+    TICKET_LOG_CHANNEL_ID = _int_setting("TICKET_LOG_CHANNEL_ID")
+    TICKET_IMAGE_LOG_CHANNEL_ID = _int_setting("TICKET_IMAGE_LOG_CHANNEL_ID")
+    TICKET_CLOSED_CATEGORY_ID = _int_setting("TICKET_CLOSED_CATEGORY_ID")
+    TICKET_REPORT_PING_ROLE_ID = _int_setting("TICKET_REPORT_PING_ROLE_ID")
+    TICKET_ADMIN_PING_ROLE_ID = _int_setting("TICKET_ADMIN_PING_ROLE_ID")
+    TICKET_WHITELISTING_PING_ROLE_ID = _int_setting("TICKET_WHITELISTING_PING_ROLE_ID")
+    TICKET_DISPUTE_PING_ROLE_ID = _int_setting("TICKET_DISPUTE_PING_ROLE_ID")
+    TICKET_OTHER_PING_ROLE_ID = _int_setting("TICKET_OTHER_PING_ROLE_ID")
+    ENABLE_WHITELIST_SYSTEM = _bool_setting("ENABLE_WHITELIST_SYSTEM")
     ENABLE_WHITELIST = _bool_setting("ENABLE_WHITELIST")
     ENABLE_MC_WHITELIST = _bool_setting("ENABLE_MC_WHITELIST")
     ENABLE_MC_VERIFY_API = _bool_setting("ENABLE_MC_VERIFY_API")

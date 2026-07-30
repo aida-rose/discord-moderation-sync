@@ -20,7 +20,6 @@ CORE_COGS = [
     "cogs.automation",
     "cogs.self_logging",
     "cogs.affiliate_owner",
-    "cogs.whitelist",
 ]
 
 OPTIONAL_COGS = []
@@ -30,6 +29,9 @@ if config.ENABLE_TICKETS:
 
 if config.ENABLE_NATION_SELECTOR:
     OPTIONAL_COGS.append("cogs.nation_selector")
+
+if config.ENABLE_WHITELIST_SYSTEM:
+    OPTIONAL_COGS.append("cogs.whitelist")
 
 COGS = [*CORE_COGS, *OPTIONAL_COGS]
 
@@ -100,6 +102,7 @@ async def on_ready():
     print(f"Command prefix: {config.COMMAND_PREFIX}")
     print(f"Nation selector enabled: {config.ENABLE_NATION_SELECTOR}")
     print(f"Tickets enabled: {config.ENABLE_TICKETS}")
+    print(f"Whitelist system loaded: {config.ENABLE_WHITELIST_SYSTEM}")
 
     print("Guilds the bot is currently in:")
     for guild in bot.guilds:

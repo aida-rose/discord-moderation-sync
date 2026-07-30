@@ -20,7 +20,7 @@ TICKET_CATEGORIES = {
         "ping_setting": "TICKET_REPORT_PING_ROLE_ID",
     },
     "admin": {
-        "label": "Admin Ticket",
+        "label": "Admin",
         "description": "Contact the admin team.",
         "ping_setting": "TICKET_ADMIN_PING_ROLE_ID",
     },
@@ -459,7 +459,8 @@ class Tickets(commands.Cog):
         embed = discord.Embed(
             title=f"{category['label']} Ticket #{ticket_number}",
             description=(
-                "A team member will be with you soon.\n"
+                "Please ask your question or explain what you need help with now. "
+                "You do not need to wait for staff to reach out first.\n"
                 "Use the button below when this ticket is ready to close."
             ),
             color=discord.Color.blurple(),
@@ -761,8 +762,9 @@ class Tickets(commands.Cog):
             await self.send_ephemeral(interaction, "Only the ticket opener or staff can request closure.")
             return
 
+        opener_mention = f"<@{ticket['opener_id']}>"
         await channel.send(
-            f"{interaction.user.mention} requested to close this ticket.",
+            f"{opener_mention}, this ticket is being requested to be closed by {interaction.user.mention}.",
             view=TicketManageView(self),
             allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
         )

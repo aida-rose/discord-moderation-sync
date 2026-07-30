@@ -38,6 +38,8 @@ INT_SETTINGS = {
     and key not in ID_LIST_SETTINGS
 }
 
+TICKET_COG_EXTENSION = "cogs.tickets"
+
 
 def parse_csv_ids(raw: str) -> list[int]:
     ids: list[int] = []
@@ -253,6 +255,36 @@ class Owner(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.started_at = datetime.now(timezone.utc)
+
+    async def apply_ticket_cog_toggle(
+        self,
+        interaction: discord.Interaction,
+        enabled: bool,
+    ) -> str:
+        action = "loaded" if enabled else "unloaded"
+
+        if enabled and TICKET_COG_EXTENSION not in self.bot.extensions:
+            await self.bot.load_extension(TICKET_COG_EXTENSION)
+        elif not enabled and TICKET_COG_EXTENSION in self.bot.extensions:
+            await self.bot.unload_extension(TICKET_COG_EXTENSION)
+        elif not enabled:
+            return ""
+        else:
+            action = "already loaded"
+
+        try:
+            if interaction.guild is not None:
+                self.bot.tree.copy_global_to(guild=interaction.guild)
+                synced = await self.bot.tree.sync(guild=interaction.guild)
+                return f"\nTicket cog {action} and synced `{len(synced)}` command(s) to this server."
+
+            synced = await self.bot.tree.sync()
+            return f"\nTicket cog {action} and synced `{len(synced)}` global command(s)."
+        except Exception as error:
+            return (
+                f"\nTicket cog {action}, but slash command sync failed: "
+                f"`{type(error).__name__}: {error}`. Try `/sync copy_global_to_this_server`."
+            )
 
     async def owner_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user is not None and config.is_bot_owner_id(interaction.user.id):
@@ -619,17 +651,29 @@ class Owner(commands.Cog):
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
 
+        await interaction.response.defer(ephemeral=True)
         config.set_setting(key, normalized)
 
         if key == "COMMAND_PREFIX":
             self.bot.command_prefix = normalized
 
+        live_note = ""
+        if key == "ENABLE_TICKETS":
+            enabled = parse_bool(normalized) == "true"
+            try:
+                live_note = await self.apply_ticket_cog_toggle(interaction, enabled)
+            except Exception as error:
+                live_note = (
+                    "\nTicket setting was saved, but the ticket cog could not be changed live: "
+                    f"`{type(error).__name__}: {error}`. Restart the bot, then run `/sync copy_global_to_this_server`."
+                )
+
         restart_note = ""
-        if key in {"ENABLE_NATION_SELECTOR", "ENABLE_TICKETS", "ENABLE_WHITELIST_SYSTEM"}:
+        if key in {"ENABLE_NATION_SELECTOR", "ENABLE_WHITELIST_SYSTEM"}:
             restart_note = "\nRestart the bot for cog loading changes to apply."
 
-        await interaction.response.send_message(
-            f"Updated {setting_summary(key, config.get_setting(key))}.{restart_note}",
+        await interaction.followup.send(
+            f"Updated {setting_summary(key, config.get_setting(key))}.{live_note}{restart_note}",
             ephemeral=True,
         )
 

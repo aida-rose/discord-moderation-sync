@@ -75,6 +75,7 @@ SETTING_DEFAULTS: dict[str, str] = {
     "APPEAL_URL": "",
     "ENABLE_NATION_SELECTOR": "false",
     "ENABLE_TICKETS": "false",
+    "TICKET_CHANNEL_ID": "0",
     "TICKET_LOG_CHANNEL_ID": "0",
     "TICKET_IMAGE_LOG_CHANNEL_ID": "0",
     "TICKET_CLOSED_CATEGORY_ID": "0",
@@ -136,9 +137,10 @@ SETTING_DESCRIPTIONS: dict[str, str] = {
     "PRIMARY_JOIN_ROLE_ID": "Optional role ID assigned to new members. Set to 0 to disable.",
     "BAN_PRUNE_SECONDS": "Seconds of messages to delete when banning.",
     "SEND_USER_NOTICES": "Whether punishment notices are DM'd to users.",
-    "APPEAL_URL": "Appeal/questions URL shown in user notices.",
+    "APPEAL_URL": "Appeal URL shown only in ban and active tempban user notices.",
     "ENABLE_NATION_SELECTOR": "Whether to load the nation selector cog on startup.",
     "ENABLE_TICKETS": "Whether to load the tickets cog on startup.",
+    "TICKET_CHANNEL_ID": "Ticket channel ID shown in warning user notices.",
     "TICKET_LOG_CHANNEL_ID": "Channel ID where archived ticket transcripts are posted.",
     "TICKET_IMAGE_LOG_CHANNEL_ID": "Channel ID where ticket media attachments are forwarded.",
     "TICKET_CLOSED_CATEGORY_ID": "Discord category ID where closed tickets are moved.",
@@ -175,6 +177,7 @@ ENV_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "APPEAL_URL": ("ESMP_APPEAL_URL", "APPEAL_URL"),
     "ENABLE_NATION_SELECTOR": ("ENABLE_NATION_SELECTOR",),
     "ENABLE_TICKETS": ("ENABLE_TICKETS",),
+    "TICKET_CHANNEL_ID": ("TICKET_CHANNEL_ID",),
     "TICKET_LOG_CHANNEL_ID": ("TICKET_LOG_CHANNEL_ID", "TICKET_LOGS_CHANNEL_ID"),
     "TICKET_IMAGE_LOG_CHANNEL_ID": ("TICKET_IMAGE_LOG_CHANNEL_ID", "TICKET_IMAGE_LOGS_CHANNEL_ID"),
     "TICKET_CLOSED_CATEGORY_ID": ("TICKET_CLOSED_CATEGORY_ID",),
@@ -398,6 +401,7 @@ def reload_settings() -> None:
     global APPEAL_URL
     global ENABLE_NATION_SELECTOR
     global ENABLE_TICKETS
+    global TICKET_CHANNEL_ID
     global TICKET_LOG_CHANNEL_ID
     global TICKET_IMAGE_LOG_CHANNEL_ID
     global TICKET_CLOSED_CATEGORY_ID
@@ -450,6 +454,7 @@ def reload_settings() -> None:
     APPEAL_URL = get_setting("APPEAL_URL").strip()
     ENABLE_NATION_SELECTOR = _bool_setting("ENABLE_NATION_SELECTOR")
     ENABLE_TICKETS = _bool_setting("ENABLE_TICKETS")
+    TICKET_CHANNEL_ID = _int_setting("TICKET_CHANNEL_ID")
     TICKET_LOG_CHANNEL_ID = _int_setting("TICKET_LOG_CHANNEL_ID")
     TICKET_IMAGE_LOG_CHANNEL_ID = _int_setting("TICKET_IMAGE_LOG_CHANNEL_ID")
     TICKET_CLOSED_CATEGORY_ID = _int_setting("TICKET_CLOSED_CATEGORY_ID")

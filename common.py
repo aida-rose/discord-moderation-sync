@@ -507,8 +507,17 @@ async def send_notice(
     embed.add_field(name="Reason", value=reason[:1024] if reason else "No reason provided.", inline=False)
     # embed.add_field(name="Moderator", value=str(moderator), inline=False)
 
-    if config.APPEAL_URL:
-        embed.add_field(name="Appeal / Questions", value=config.APPEAL_URL, inline=False)
+    action_text = action.strip().lower()
+
+    if action_text == "ban" or action_text.startswith("tempban #"):
+        if config.APPEAL_URL:
+            embed.add_field(name="Appeal", value=config.APPEAL_URL, inline=False)
+    elif action_text.startswith("warning") and config.TICKET_CHANNEL_ID:
+        embed.add_field(
+            name="Questions / Dispute",
+            value=f"<#{config.TICKET_CHANNEL_ID}>",
+            inline=False,
+        )
 
     embed.set_footer(text=f"{config.NETWORK_NAME} moderation notice")
 

@@ -4,6 +4,7 @@ import os
 import re
 from datetime import datetime, timezone
 from typing import Optional, Iterable
+from urllib.parse import unquote, urlparse
 
 import discord
 from discord.ext import commands
@@ -218,6 +219,42 @@ def looks_like_image_or_gif_url(url: Optional[str]) -> bool:
     return clean_url.endswith(MEDIA_EXTENSIONS)
 
 
+def media_dedupe_key(url: str) -> str:
+    parsed = urlparse(str(url))
+    host = parsed.netloc.lower()
+    path = unquote(parsed.path).lower().rstrip("/")
+
+    if host in {
+        "cdn.discordapp.com",
+        "media.discordapp.net",
+        "images-ext-1.discordapp.net",
+        "images-ext-2.discordapp.net",
+    }:
+        for marker in ("/attachments/", "/emojis/"):
+            if marker in path:
+                return f"discord{marker}{path.split(marker, 1)[1]}"
+
+    filename = path.rsplit("/", 1)[-1]
+
+    if filename.endswith(MEDIA_EXTENSIONS):
+        return f"filename:{filename}"
+
+    return f"{host}{path}"
+
+
+def append_unique_media_url(urls: list[str], seen: set[str], url: Optional[str]) -> None:
+    if not url:
+        return
+
+    key = media_dedupe_key(url)
+
+    if key in seen:
+        return
+
+    seen.add(key)
+    urls.append(str(url))
+
+
 def attachment_media_url(attachment: discord.Attachment) -> str | None:
     content_type = getattr(attachment, "content_type", None)
     filename = getattr(attachment, "filename", "")
@@ -232,6 +269,7 @@ def attachment_media_url(attachment: discord.Attachment) -> str | None:
 
 def embed_media_urls(message_embed: discord.Embed) -> list[str]:
     urls: list[str] = []
+    seen: set[str] = set()
 
     for attr in ("image", "thumbnail"):
         media = getattr(message_embed, attr, None)
@@ -239,44 +277,42 @@ def embed_media_urls(message_embed: discord.Embed) -> list[str]:
         for url_attr in ("proxy_url", "url"):
             url = getattr(media, url_attr, None)
 
-            if url and url not in urls:
-                urls.append(url)
+            append_unique_media_url(urls, seen, url)
 
     video = getattr(message_embed, "video", None)
 
     for url_attr in ("proxy_url", "url"):
         url = getattr(video, url_attr, None)
 
-        if looks_like_image_or_gif_url(url) and url not in urls:
-            urls.append(url)
+        if looks_like_image_or_gif_url(url):
+            append_unique_media_url(urls, seen, url)
 
     embed_url = getattr(message_embed, "url", None)
 
-    if looks_like_image_or_gif_url(embed_url) and embed_url not in urls:
-        urls.append(embed_url)
+    if looks_like_image_or_gif_url(embed_url):
+        append_unique_media_url(urls, seen, embed_url)
 
     return urls
 
 
 def message_media_urls(message: discord.Message) -> list[str]:
     urls: list[str] = []
+    seen: set[str] = set()
 
     for attachment in message.attachments:
         url = attachment_media_url(attachment)
 
-        if url and url not in urls:
-            urls.append(url)
+        append_unique_media_url(urls, seen, url)
 
     for message_embed in message.embeds:
         for url in embed_media_urls(message_embed):
-            if url not in urls:
-                urls.append(url)
+            append_unique_media_url(urls, seen, url)
 
     for url in re.findall(r"https?://\S+", message.content or ""):
         url = url.rstrip(").,!?\"'")
 
-        if looks_like_image_or_gif_url(url) and url not in urls:
-            urls.append(url)
+        if looks_like_image_or_gif_url(url):
+            append_unique_media_url(urls, seen, url)
 
     return urls
 
@@ -549,12 +585,12 @@ class Logging(commands.Cog):
         if thumbnail_url:
             embed.set_thumbnail(url=thumbnail_url)
 
-        preview_urls = []
+        preview_urls: list[str] = []
+        seen_preview_urls: set[str] = set()
 
         if image_urls:
             for url in image_urls:
-                if url and url not in preview_urls:
-                    preview_urls.append(url)
+                append_unique_media_url(preview_urls, seen_preview_urls, url)
 
         preview_urls = preview_urls[:10]
 

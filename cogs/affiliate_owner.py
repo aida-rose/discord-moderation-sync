@@ -19,11 +19,23 @@ def is_bot_owner_interaction(interaction: discord.Interaction) -> bool:
     )
 
 
-async def owner_only_check(interaction: discord.Interaction) -> bool:
+def is_admin_or_owner_interaction(interaction: discord.Interaction) -> bool:
     if is_bot_owner_interaction(interaction):
         return True
 
-    raise app_commands.CheckFailure("Only the bot owner can use this command.")
+    return (
+        interaction.guild is not None
+        and interaction.guild.id == config.HOME_GUILD_ID
+        and isinstance(interaction.user, discord.Member)
+        and interaction.user.guild_permissions.administrator
+    )
+
+
+async def admin_or_owner_check(interaction: discord.Interaction) -> bool:
+    if is_admin_or_owner_interaction(interaction):
+        return True
+
+    raise app_commands.CheckFailure("Only a primary-server administrator or bot owner can use this command.")
 
 
 def parse_discord_id(value: str, label: str) -> int:
@@ -68,7 +80,7 @@ class AffiliateOwner(commands.Cog):
         log_channel_id="Optional log channel/thread ID for that affiliate.",
         confirm="Set to true to confirm adding the affiliate.",
     )
-    @app_commands.check(owner_only_check)
+    @app_commands.check(admin_or_owner_check)
     async def affiliate_add(
         self,
         interaction: discord.Interaction,
@@ -158,7 +170,7 @@ class AffiliateOwner(commands.Cog):
         guild_id="Affiliate server ID.",
         confirm="Set to true to confirm removing the affiliate.",
     )
-    @app_commands.check(owner_only_check)
+    @app_commands.check(admin_or_owner_check)
     async def affiliate_remove(
         self,
         interaction: discord.Interaction,
@@ -204,7 +216,7 @@ class AffiliateOwner(commands.Cog):
     @app_commands.describe(
         guild_id="Affiliate server ID.",
     )
-    @app_commands.check(owner_only_check)
+    @app_commands.check(admin_or_owner_check)
     async def affiliate_enable(
         self,
         interaction: discord.Interaction,
@@ -239,7 +251,7 @@ class AffiliateOwner(commands.Cog):
     @app_commands.describe(
         guild_id="Affiliate server ID.",
     )
-    @app_commands.check(owner_only_check)
+    @app_commands.check(admin_or_owner_check)
     async def affiliate_disable(
         self,
         interaction: discord.Interaction,
@@ -275,7 +287,7 @@ class AffiliateOwner(commands.Cog):
         guild_id="Affiliate server ID.",
         log_channel_id="Log channel/thread ID. Leave blank to clear it.",
     )
-    @app_commands.check(owner_only_check)
+    @app_commands.check(admin_or_owner_check)
     async def affiliate_log(
         self,
         interaction: discord.Interaction,
@@ -326,7 +338,7 @@ class AffiliateOwner(commands.Cog):
         name="affiliate_list",
         description="List runtime affiliate servers.",
     )
-    @app_commands.check(owner_only_check)
+    @app_commands.check(admin_or_owner_check)
     async def affiliate_list(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
@@ -367,7 +379,7 @@ class AffiliateOwner(commands.Cog):
         if isinstance(error, app_commands.CheckFailure):
             await self.send_error(
                 interaction,
-                "Only the bot owner can use this command.",
+                "Only a primary-server administrator or bot owner can use this command.",
             )
             return
 

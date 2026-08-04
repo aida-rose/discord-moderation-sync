@@ -303,6 +303,31 @@ class Owner(commands.Cog):
     
         return False
 
+    async def admin_or_owner_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user is not None and config.is_bot_owner_id(interaction.user.id):
+            return True
+
+        if (
+            interaction.guild is not None
+            and interaction.guild.id == config.HOME_GUILD_ID
+            and isinstance(interaction.user, discord.Member)
+            and interaction.user.guild_permissions.administrator
+        ):
+            return True
+
+        if interaction.response.is_done():
+            await interaction.followup.send(
+                "Only a primary-server administrator or bot owner can use this command.",
+                ephemeral=True,
+            )
+        else:
+            await interaction.response.send_message(
+                "Only a primary-server administrator or bot owner can use this command.",
+                ephemeral=True,
+            )
+
+        return False
+
     @app_commands.command(
         name="ping",
         description="Check the bot latency.",
@@ -819,7 +844,7 @@ class Owner(commands.Cog):
         interaction: discord.Interaction,
         term: str,
     ):
-        if not await self.owner_check(interaction):
+        if not await self.admin_or_owner_check(interaction):
             return
 
         try:
@@ -854,7 +879,7 @@ class Owner(commands.Cog):
         interaction: discord.Interaction,
         term: str,
     ):
-        if not await self.owner_check(interaction):
+        if not await self.admin_or_owner_check(interaction):
             return
 
         try:
@@ -882,7 +907,7 @@ class Owner(commands.Cog):
         description="Show the current flagged-message words and phrases.",
     )
     async def swear_list(self, interaction: discord.Interaction):
-        if not await self.owner_check(interaction):
+        if not await self.admin_or_owner_check(interaction):
             return
 
         terms = current_swear_terms()

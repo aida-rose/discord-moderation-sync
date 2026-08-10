@@ -22,6 +22,7 @@ This bot is intended for use by a controlled network of approved servers. It is 
 - Join guard / account age protection
 - Runtime affiliate management commands for bot owners
 - Optional ticket system with category dropdowns, close/archive flow, transcripts, and media logs
+- Optional nation selector with Minecraft account registration, Bedrock/Geyser support, and rejoin role restore
 - Role-based command permissions
 - Owner-only bot management commands
 
@@ -41,9 +42,22 @@ To enable tickets, set `ENABLE_TICKETS` to `true` and restart the bot. Then conf
 - `TICKET_LOG_CHANNEL_ID` for archived `.txt` transcripts
 - `TICKET_IMAGE_LOG_CHANNEL_ID` for forwarded ticket media
 - `TICKET_CLOSED_CATEGORY_ID` for closed ticket channels
-- `TICKET_REPORT_PING_ROLE_ID`, `TICKET_ADMIN_PING_ROLE_ID`, `TICKET_WHITELISTING_PING_ROLE_ID`, `TICKET_DISPUTE_PING_ROLE_ID`, and `TICKET_OTHER_PING_ROLE_ID` for category-specific pings
+- `TICKET_REPORT_PING_ROLE_ID`, `TICKET_ADMIN_PING_ROLE_ID`, `TICKET_DISPUTE_PING_ROLE_ID`, and `TICKET_OTHER_PING_ROLE_ID` for category-specific pings
 
 Use `/ticket_panel` in a text channel inside the Discord category where open tickets should be created.
+
+To enable the nation selector, set `ENABLE_NATION_SELECTOR` to `true` and restart the bot. Then configure:
+
+- `WHITELISTED_ROLE_ID` for the role granted after Minecraft account registration
+- `PLAINS_ROLE_ID`, `FOREST_ROLE_ID`, `DESERT_ROLE_ID`, `TAIGA_ROLE_ID`, `JUNGLE_ROLE_ID`, `DARK_FOREST_ROLE_ID`, `MESA_ROLE_ID`, `SNOW_ROLE_ID`, `MUSHROOM_ISLAND_ROLE_ID`, `SAVANNA_ROLE_ID`, `SWAMP_ROLE_ID`, and `CHERRY_ROLE_ID` for the 12 nation roles
+- `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, and `MS_REDIRECT_URI` in `.env` for Microsoft OAuth registration
+- `NATION_SELECTOR_LOG_THREAD_ID` for optional selector logs
+
+Register the Microsoft OAuth app for personal Microsoft accounts, add a web redirect URI that exactly matches `MS_REDIRECT_URI`, and make that URL route to this bot's `NATION_OAUTH_PORT`.
+
+Java profile verification uses Minecraft Java game service APIs; new third-party integrations may need Mojang review/allowlist access.
+
+Use `/nation_panel` to send the registration button. Users choose Java or Bedrock/Geyser before Microsoft sign-in, and the callback links only the selected account type. Primary-server administrators can use `/nation_change` to change a registered user's nation and `/nation_reset` to remove a user from the nation database.
 
 ## Docker Compose Deployment
 

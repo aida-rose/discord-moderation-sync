@@ -110,7 +110,6 @@ THREADS = {
     "message": "LOG_MESSAGE_THREAD_ID",
     "vc": "LOG_VC_THREAD_ID",
     "joins": "LOG_JOINS_THREAD_ID",
-    "whitelist": "LOG_WHITELIST_THREAD_ID",
     "other": "LOG_OTHER_THREAD_ID",
     "role_management": "LOG_ROLE_MANAGEMENT_THREAD_ID",
 }
@@ -517,7 +516,6 @@ class Logging(commands.Cog):
     - message: message edits/deletions/bulk deletions
     - vc: voice channel and stage activity
     - joins: server joins/leaves
-    - whitelist: Minecraft account linking, Discord whitelist role, and RCON whitelist events
     - other: anything else
     """
 

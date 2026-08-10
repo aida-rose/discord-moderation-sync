@@ -7,6 +7,6 @@ services:
       - path: .env
         required: false
     ports:
-      - "${MC_VERIFY_API_PORT:-8765}:${MC_VERIFY_API_PORT:-8765}"
+      - "${NATION_OAUTH_PORT:-8080}:${NATION_OAUTH_PORT:-8080}"
     volumes:
       - ./data:/app/data

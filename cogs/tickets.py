@@ -24,11 +24,6 @@ TICKET_CATEGORIES = {
         "description": "Contact the admin team.",
         "ping_setting": "TICKET_ADMIN_PING_ROLE_ID",
     },
-    "whitelisting": {
-        "label": "Whitelisting Issues",
-        "description": "Get help with whitelist or linking problems.",
-        "ping_setting": "TICKET_WHITELISTING_PING_ROLE_ID",
-    },
     "dispute": {
         "label": "Dispute",
         "description": "Dispute a moderation action or decision.",

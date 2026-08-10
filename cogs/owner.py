@@ -21,10 +21,6 @@ BOOL_SETTINGS = {
     "SEND_USER_NOTICES",
     "ENABLE_NATION_SELECTOR",
     "ENABLE_TICKETS",
-    "ENABLE_WHITELIST_SYSTEM",
-    "ENABLE_WHITELIST",
-    "ENABLE_MC_WHITELIST",
-    "ENABLE_MC_VERIFY_API",
 }
 
 INT_SETTINGS = {
@@ -694,7 +690,7 @@ class Owner(commands.Cog):
                 )
 
         restart_note = ""
-        if key in {"ENABLE_NATION_SELECTOR", "ENABLE_WHITELIST_SYSTEM"}:
+        if key == "ENABLE_NATION_SELECTOR":
             restart_note = "\nRestart the bot for cog loading changes to apply."
 
         await interaction.followup.send(

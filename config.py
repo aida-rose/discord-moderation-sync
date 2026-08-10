@@ -70,6 +70,7 @@ SETTING_DEFAULTS: dict[str, str] = {
     "BAN_STAFF_ROLE_IDS": "",
     "ALT_ALERT_ROLE_ID": "0",
     "PRIMARY_JOIN_ROLE_ID": "0",
+    "WHITELISTED_ROLE_ID": "0",
     "BAN_PRUNE_SECONDS": "0",
     "SEND_USER_NOTICES": "true",
     "APPEAL_URL": "",
@@ -81,16 +82,8 @@ SETTING_DEFAULTS: dict[str, str] = {
     "TICKET_CLOSED_CATEGORY_ID": "0",
     "TICKET_REPORT_PING_ROLE_ID": "0",
     "TICKET_ADMIN_PING_ROLE_ID": "0",
-    "TICKET_WHITELISTING_PING_ROLE_ID": "0",
     "TICKET_DISPUTE_PING_ROLE_ID": "0",
     "TICKET_OTHER_PING_ROLE_ID": "0",
-    "ENABLE_WHITELIST_SYSTEM": "false",
-    "ENABLE_WHITELIST": "false",
-    "ENABLE_MC_WHITELIST": "false",
-    "ENABLE_MC_VERIFY_API": "false",
-    "WHITELIST_ROLE_ID": "0",
-    "BEDROCK_USERNAME_PREFIX": ".",
-    "BEDROCK_SPACE_REPLACEMENT": "_",
     "LOG_MODERATION_THREAD_ID": "0",
     "LOG_SERVER_MANAGEMENT_THREAD_ID": "0",
     "LOG_INVITE_THREAD_ID": "0",
@@ -100,14 +93,12 @@ SETTING_DEFAULTS: dict[str, str] = {
     "LOG_MESSAGE_THREAD_ID": "0",
     "LOG_VC_THREAD_ID": "0",
     "LOG_JOINS_THREAD_ID": "0",
-    "LOG_WHITELIST_THREAD_ID": "0",
     "LOG_OTHER_THREAD_ID": "0",
     "LOG_ROLE_MANAGEMENT_THREAD_ID": "0",
     "SELF_LOG_THREAD_ID": "0",
     "NATION_SELECTOR_LOG_THREAD_ID": "0",
     "SWEARS_FILE": "cogs/swears.txt",
     "FLAGGED_MESSAGE_REGEX": "",
-    "NATION_ASSIGNMENTS_CSV": "data/nation_assignments.csv",
     "PLAINS_ROLE_ID": "0",
     "FOREST_ROLE_ID": "0",
     "DESERT_ROLE_ID": "0",
@@ -135,6 +126,7 @@ SETTING_DESCRIPTIONS: dict[str, str] = {
     "BAN_STAFF_ROLE_IDS": "Comma-separated ban-permission role IDs.",
     "ALT_ALERT_ROLE_ID": "Role ID pinged when altcheck matches a banned account.",
     "PRIMARY_JOIN_ROLE_ID": "Optional role ID assigned to new members. Set to 0 to disable.",
+    "WHITELISTED_ROLE_ID": "Role ID granted after nation and Minecraft account registration.",
     "BAN_PRUNE_SECONDS": "Seconds of messages to delete when banning.",
     "SEND_USER_NOTICES": "Whether punishment notices are DM'd to users.",
     "APPEAL_URL": "Appeal URL shown only in ban and active tempban user notices.",
@@ -146,17 +138,21 @@ SETTING_DESCRIPTIONS: dict[str, str] = {
     "TICKET_CLOSED_CATEGORY_ID": "Discord category ID where closed tickets are moved.",
     "TICKET_REPORT_PING_ROLE_ID": "Role ID pinged for Report tickets.",
     "TICKET_ADMIN_PING_ROLE_ID": "Role ID pinged for Admin tickets.",
-    "TICKET_WHITELISTING_PING_ROLE_ID": "Role ID pinged for Whitelisting Issues tickets.",
     "TICKET_DISPUTE_PING_ROLE_ID": "Role ID pinged for Dispute tickets.",
     "TICKET_OTHER_PING_ROLE_ID": "Role ID pinged for Other tickets.",
-    "ENABLE_WHITELIST_SYSTEM": "Master switch that loads the Minecraft whitelist cog on startup.",
-    "ENABLE_WHITELIST": "Whether Discord whitelist/linking interactions are enabled.",
-    "ENABLE_MC_WHITELIST": "Whether verified links should be synced to the Minecraft whitelist through RCON.",
-    "ENABLE_MC_VERIFY_API": "Whether to start the private Minecraft verification API used by the verification server plugin.",
-    "WHITELIST_ROLE_ID": "Discord role ID granted to linked whitelist users.",
-    "BEDROCK_USERNAME_PREFIX": "Geyser/Floodgate prefix used for Bedrock players on the Java server.",
-    "BEDROCK_SPACE_REPLACEMENT": "Replacement used for spaces in Bedrock names on the Java server.",
-    "LOG_WHITELIST_THREAD_ID": "Thread/channel ID for Minecraft whitelist logs.",
+    "NATION_SELECTOR_LOG_THREAD_ID": "Thread/channel ID for nation selector logs.",
+    "PLAINS_ROLE_ID": "Discord role ID for the Plains nation.",
+    "FOREST_ROLE_ID": "Discord role ID for the Forest nation.",
+    "DESERT_ROLE_ID": "Discord role ID for the Desert nation.",
+    "TAIGA_ROLE_ID": "Discord role ID for the Taiga nation.",
+    "JUNGLE_ROLE_ID": "Discord role ID for the Jungle nation.",
+    "DARK_FOREST_ROLE_ID": "Discord role ID for the Dark Forest nation.",
+    "MESA_ROLE_ID": "Discord role ID for the Mesa nation.",
+    "SNOW_ROLE_ID": "Discord role ID for the Snow nation.",
+    "MUSHROOM_ISLAND_ROLE_ID": "Discord role ID for the Mushroom Island nation.",
+    "SAVANNA_ROLE_ID": "Discord role ID for the Savanna nation.",
+    "SWAMP_ROLE_ID": "Discord role ID for the Swamp nation.",
+    "CHERRY_ROLE_ID": "Discord role ID for the Cherry nation.",
     "SWEARS_FILE": "File path for flagged message terms.",
     "FLAGGED_MESSAGE_REGEX": "Optional regex for flagged-message logging.",
 }
@@ -173,6 +169,7 @@ ENV_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "BAN_STAFF_ROLE_IDS": ("ESMP_BAN_ROLES", "BAN_MOD_ROLE_IDS", "BAN_ROLE_IDS"),
     "ALT_ALERT_ROLE_ID": ("ALT_ALERT_ROLE_ID",),
     "BAN_PRUNE_SECONDS": ("ESMP_BAN_PRUNE_SECONDS", "BAN_DELETE_MESSAGE_SECONDS", "BAN_PRUNE_SECONDS"),
+    "WHITELISTED_ROLE_ID": ("WHITELISTED_ROLE_ID",),
     "SEND_USER_NOTICES": ("ESMP_SEND_USER_NOTICES", "DM_ON_PUNISHMENTS", "SEND_USER_NOTICES"),
     "APPEAL_URL": ("ESMP_APPEAL_URL", "APPEAL_URL"),
     "ENABLE_NATION_SELECTOR": ("ENABLE_NATION_SELECTOR",),
@@ -183,16 +180,8 @@ ENV_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "TICKET_CLOSED_CATEGORY_ID": ("TICKET_CLOSED_CATEGORY_ID",),
     "TICKET_REPORT_PING_ROLE_ID": ("TICKET_REPORT_PING_ROLE_ID",),
     "TICKET_ADMIN_PING_ROLE_ID": ("TICKET_ADMIN_PING_ROLE_ID",),
-    "TICKET_WHITELISTING_PING_ROLE_ID": ("TICKET_WHITELISTING_PING_ROLE_ID",),
     "TICKET_DISPUTE_PING_ROLE_ID": ("TICKET_DISPUTE_PING_ROLE_ID",),
     "TICKET_OTHER_PING_ROLE_ID": ("TICKET_OTHER_PING_ROLE_ID",),
-    "ENABLE_WHITELIST_SYSTEM": ("ENABLE_WHITELIST_SYSTEM",),
-    "ENABLE_WHITELIST": ("ENABLE_WHITELIST",),
-    "ENABLE_MC_WHITELIST": ("ENABLE_MC_WHITELIST",),
-    "ENABLE_MC_VERIFY_API": ("ENABLE_MC_VERIFY_API",),
-    "WHITELIST_ROLE_ID": ("WHITELIST_ROLE_ID",),
-    "BEDROCK_USERNAME_PREFIX": ("BEDROCK_USERNAME_PREFIX",),
-    "BEDROCK_SPACE_REPLACEMENT": ("BEDROCK_SPACE_REPLACEMENT",),
     "LOGGED_GUILD_IDS": ("LOGGED_GUILD_IDS",),
     "PRIMARY_JOIN_ROLE_ID": ("PRIMARY_JOIN_ROLE_ID",),
     "LOG_MODERATION_THREAD_ID": ("LOG_MODERATION_THREAD_ID",),
@@ -204,14 +193,12 @@ ENV_MIGRATIONS: dict[str, tuple[str, ...]] = {
     "LOG_MESSAGE_THREAD_ID": ("LOG_MESSAGE_THREAD_ID",),
     "LOG_VC_THREAD_ID": ("LOG_VC_THREAD_ID",),
     "LOG_JOINS_THREAD_ID": ("LOG_JOINS_THREAD_ID",),
-    "LOG_WHITELIST_THREAD_ID": ("LOG_WHITELIST_THREAD_ID",),
     "LOG_OTHER_THREAD_ID": ("LOG_OTHER_THREAD_ID",),
     "LOG_ROLE_MANAGEMENT_THREAD_ID": ("LOG_ROLE_MANAGEMENT_THREAD_ID",),
     "SELF_LOG_THREAD_ID": ("SELF_LOG_THREAD_ID",),
     "NATION_SELECTOR_LOG_THREAD_ID": ("NATION_SELECTOR_LOG_THREAD_ID",),
     "SWEARS_FILE": ("SWEARS_FILE",),
     "FLAGGED_MESSAGE_REGEX": ("FLAGGED_MESSAGE_REGEX",),
-    "NATION_ASSIGNMENTS_CSV": ("NATION_ASSIGNMENTS_CSV",),
     "PLAINS_ROLE_ID": ("PLAINS_ROLE_ID",),
     "FOREST_ROLE_ID": ("FOREST_ROLE_ID",),
     "DESERT_ROLE_ID": ("DESERT_ROLE_ID",),
@@ -396,6 +383,7 @@ def reload_settings() -> None:
     global BAN_STAFF_ROLE_IDS
     global ALT_ALERT_ROLE_ID
     global PRIMARY_JOIN_ROLE_ID
+    global WHITELISTED_ROLE_ID
     global BAN_PRUNE_SECONDS
     global SEND_USER_NOTICES
     global APPEAL_URL
@@ -407,16 +395,8 @@ def reload_settings() -> None:
     global TICKET_CLOSED_CATEGORY_ID
     global TICKET_REPORT_PING_ROLE_ID
     global TICKET_ADMIN_PING_ROLE_ID
-    global TICKET_WHITELISTING_PING_ROLE_ID
     global TICKET_DISPUTE_PING_ROLE_ID
     global TICKET_OTHER_PING_ROLE_ID
-    global ENABLE_WHITELIST_SYSTEM
-    global ENABLE_WHITELIST
-    global ENABLE_MC_WHITELIST
-    global ENABLE_MC_VERIFY_API
-    global WHITELIST_ROLE_ID
-    global BEDROCK_USERNAME_PREFIX
-    global BEDROCK_SPACE_REPLACEMENT
     global LOG_MODERATION_THREAD_ID
     global LOG_SERVER_MANAGEMENT_THREAD_ID
     global LOG_INVITE_THREAD_ID
@@ -426,14 +406,12 @@ def reload_settings() -> None:
     global LOG_MESSAGE_THREAD_ID
     global LOG_VC_THREAD_ID
     global LOG_JOINS_THREAD_ID
-    global LOG_WHITELIST_THREAD_ID
     global LOG_OTHER_THREAD_ID
     global LOG_ROLE_MANAGEMENT_THREAD_ID
     global SELF_LOG_THREAD_ID
     global NATION_SELECTOR_LOG_THREAD_ID
     global SWEARS_FILE
     global FLAGGED_MESSAGE_REGEX
-    global NATION_ASSIGNMENTS_CSV
     global SYNC_GUILD_IDS
     global MODLOG_ROUTES
 
@@ -449,6 +427,7 @@ def reload_settings() -> None:
     BAN_STAFF_ROLE_IDS = set(_csv_ids(get_setting("BAN_STAFF_ROLE_IDS")))
     ALT_ALERT_ROLE_ID = _int_setting("ALT_ALERT_ROLE_ID")
     PRIMARY_JOIN_ROLE_ID = _int_setting("PRIMARY_JOIN_ROLE_ID")
+    WHITELISTED_ROLE_ID = _int_setting("WHITELISTED_ROLE_ID")
     BAN_PRUNE_SECONDS = _int_setting("BAN_PRUNE_SECONDS")
     SEND_USER_NOTICES = _bool_setting("SEND_USER_NOTICES")
     APPEAL_URL = get_setting("APPEAL_URL").strip()
@@ -460,16 +439,8 @@ def reload_settings() -> None:
     TICKET_CLOSED_CATEGORY_ID = _int_setting("TICKET_CLOSED_CATEGORY_ID")
     TICKET_REPORT_PING_ROLE_ID = _int_setting("TICKET_REPORT_PING_ROLE_ID")
     TICKET_ADMIN_PING_ROLE_ID = _int_setting("TICKET_ADMIN_PING_ROLE_ID")
-    TICKET_WHITELISTING_PING_ROLE_ID = _int_setting("TICKET_WHITELISTING_PING_ROLE_ID")
     TICKET_DISPUTE_PING_ROLE_ID = _int_setting("TICKET_DISPUTE_PING_ROLE_ID")
     TICKET_OTHER_PING_ROLE_ID = _int_setting("TICKET_OTHER_PING_ROLE_ID")
-    ENABLE_WHITELIST_SYSTEM = _bool_setting("ENABLE_WHITELIST_SYSTEM")
-    ENABLE_WHITELIST = _bool_setting("ENABLE_WHITELIST")
-    ENABLE_MC_WHITELIST = _bool_setting("ENABLE_MC_WHITELIST")
-    ENABLE_MC_VERIFY_API = _bool_setting("ENABLE_MC_VERIFY_API")
-    WHITELIST_ROLE_ID = _int_setting("WHITELIST_ROLE_ID")
-    BEDROCK_USERNAME_PREFIX = get_setting("BEDROCK_USERNAME_PREFIX").strip()
-    BEDROCK_SPACE_REPLACEMENT = get_setting("BEDROCK_SPACE_REPLACEMENT")
     LOG_MODERATION_THREAD_ID = _int_setting("LOG_MODERATION_THREAD_ID")
     LOG_SERVER_MANAGEMENT_THREAD_ID = _int_setting("LOG_SERVER_MANAGEMENT_THREAD_ID")
     LOG_INVITE_THREAD_ID = _int_setting("LOG_INVITE_THREAD_ID")
@@ -479,14 +450,12 @@ def reload_settings() -> None:
     LOG_MESSAGE_THREAD_ID = _int_setting("LOG_MESSAGE_THREAD_ID")
     LOG_VC_THREAD_ID = _int_setting("LOG_VC_THREAD_ID")
     LOG_JOINS_THREAD_ID = _int_setting("LOG_JOINS_THREAD_ID")
-    LOG_WHITELIST_THREAD_ID = _int_setting("LOG_WHITELIST_THREAD_ID")
     LOG_OTHER_THREAD_ID = _int_setting("LOG_OTHER_THREAD_ID")
     LOG_ROLE_MANAGEMENT_THREAD_ID = _int_setting("LOG_ROLE_MANAGEMENT_THREAD_ID")
     SELF_LOG_THREAD_ID = _int_setting("SELF_LOG_THREAD_ID")
     NATION_SELECTOR_LOG_THREAD_ID = _int_setting("NATION_SELECTOR_LOG_THREAD_ID")
     SWEARS_FILE = get_setting("SWEARS_FILE")
     FLAGGED_MESSAGE_REGEX = get_setting("FLAGGED_MESSAGE_REGEX").strip()
-    NATION_ASSIGNMENTS_CSV = get_setting("NATION_ASSIGNMENTS_CSV")
 
     SYNC_GUILD_IDS = []
     for guild_id in [HOME_GUILD_ID, BASE_GUILD_ID]:

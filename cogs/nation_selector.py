@@ -908,6 +908,9 @@ class NationSelector(commands.Cog):
             if info.role.id in member_role_ids
         ]
 
+    def is_admin_no_nation_member(self, member: discord.Member) -> bool:
+        return member.guild_permissions.administrator
+
     def least_populated_nation(self, nation_roles: list[NationRole]) -> NationRole:
         return min(
             nation_roles,
@@ -959,6 +962,30 @@ class NationSelector(commands.Cog):
         if roles_to_remove:
             await member.remove_roles(*roles_to_remove, reason=reason)
 
+    async def remove_nation_roles(
+        self,
+        member: discord.Member,
+        *,
+        reason: str,
+    ) -> list[str]:
+        nation_roles, _missing = self.nation_roles(member.guild)
+        notes: list[str] = []
+
+        nation_roles_to_remove = [
+            info.role
+            for info in nation_roles
+            if info.role in member.roles
+        ]
+
+        if nation_roles_to_remove:
+            try:
+                await member.remove_roles(*nation_roles_to_remove, reason=reason)
+                notes.append("Removed nation role(s).")
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                notes.append(f"Could not remove nation role(s): `{type(exc).__name__}: {exc}`")
+
+        return notes
+
     def whitelisted_role(self, guild: discord.Guild) -> Optional[discord.Role]:
         if config.WHITELISTED_ROLE_ID == 0:
             return None
@@ -1003,6 +1030,22 @@ class NationSelector(commands.Cog):
         existing = registration_for_discord(interaction.user.id)
         if existing is not None:
             await self.restore_registered_roles(interaction.user, existing, notify_interaction=interaction)
+            return
+
+        if self.is_admin_no_nation_member(interaction.user):
+            await self.remove_nation_roles(
+                interaction.user,
+                reason="Nation selector admin no-nation registration.",
+            )
+            await interaction.response.send_message(
+                (
+                    "Admins are not assigned to nations.\n"
+                    "Choose which Minecraft edition you want to link for whitelist verification."
+                ),
+                view=EditionChoiceView(self, ""),
+                ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
             return
 
         nation_roles, missing = self.nation_roles(interaction.guild)
@@ -1067,7 +1110,9 @@ class NationSelector(commands.Cog):
             )
             return
 
-        if self.nation_by_name(interaction.guild, nation_name) is None:
+        admin_without_nation = self.is_admin_no_nation_member(interaction.user) and not nation_name
+
+        if not admin_without_nation and self.nation_by_name(interaction.guild, nation_name) is None:
             await self.send_ephemeral(interaction, "That pending nation is no longer configured. Click the panel again.")
             return
 
@@ -1085,10 +1130,11 @@ class NationSelector(commands.Cog):
         )
         login_url = authorization_url(oauth_state, oauth)
         edition_label = "Bedrock/Geyser" if account_type == "bedrock" else "Java"
+        target_label = "No nation (admin)" if admin_without_nation else nation_name
 
         await interaction.response.send_message(
             (
-                f"Your pending nation is **{nation_name}**.\n"
+                f"Your pending nation is **{target_label}**.\n"
                 f"Selected edition: **{edition_label}**.\n"
                 "Use the Microsoft sign-in button to verify the Microsoft/Xbox account "
                 "that owns your Minecraft account. This link expires in "
@@ -1103,7 +1149,7 @@ class NationSelector(commands.Cog):
             interaction.guild,
             (
                 f"{interaction.user} (`{interaction.user.id}`) started "
-                f"{edition_label} OAuth registration for {nation_name}."
+                f"{edition_label} OAuth registration for {target_label}."
             ),
         )
 
@@ -1132,8 +1178,19 @@ class NationSelector(commands.Cog):
         *,
         reason: str,
     ) -> list[str]:
-        nation_roles, missing = self.nation_roles(member.guild)
         notes: list[str] = []
+
+        if not nation_name:
+            notes.extend(await self.remove_nation_roles(member, reason=reason))
+
+            try:
+                notes.append(await self.apply_whitelisted_role(member, reason=reason))
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                notes.append(f"Could not apply whitelisted role: {type(exc).__name__}: {exc}")
+
+            return notes
+
+        nation_roles, missing = self.nation_roles(member.guild)
 
         if missing:
             notes.append("Nation roles are not fully configured.")
@@ -1233,18 +1290,19 @@ class NationSelector(commands.Cog):
             )
 
         account_label = "Bedrock/Geyser" if profile.account_type == "bedrock" else "Java"
+        nation_label = oauth_state.nation_name or "No nation (admin)"
         await self.log(
             guild,
             (
                 f"`{oauth_state.discord_id}` completed OAuth registration for "
-                f"{account_label} `{profile.username}` (`{profile.uuid}`) in {oauth_state.nation_name}."
+                f"{account_label} `{profile.username}` (`{profile.uuid}`) in {nation_label}."
             ),
         )
 
         body = (
             f"Registered {html.escape(account_label)} account "
             f"<strong>{html.escape(profile.username)}</strong> to "
-            f"<strong>{html.escape(oauth_state.nation_name)}</strong>. "
+            f"<strong>{html.escape(nation_label)}</strong>. "
             "You can close this page and return to Discord."
         )
 
@@ -1260,6 +1318,41 @@ class NationSelector(commands.Cog):
         *,
         notify_interaction: Optional[discord.Interaction] = None,
     ) -> None:
+        if self.is_admin_no_nation_member(member) and registration["nation_name"]:
+            update_registration_nation(member.id, "")
+            notes = await self.apply_registered_roles(
+                member,
+                "",
+                reason="Nation selector admin no-nation whitelist restore.",
+            )
+
+            if notify_interaction is not None:
+                await self.send_ephemeral(
+                    notify_interaction,
+                    "You are registered as an admin with no nation assignment.\n" + "\n".join(notes),
+                )
+
+            await self.log(
+                member.guild,
+                f"Converted admin registration for {member} (`{member.id}`) to no nation.",
+            )
+            return
+
+        if not registration["nation_name"]:
+            notes = await self.apply_registered_roles(
+                member,
+                "",
+                reason="Nation selector no-nation whitelist restore.",
+            )
+
+            if notify_interaction is not None:
+                await self.send_ephemeral(
+                    notify_interaction,
+                    "You are already registered with no nation assignment.\n" + "\n".join(notes),
+                )
+
+            return
+
         nation_roles, missing = self.nation_roles(member.guild)
 
         if missing:
@@ -1466,7 +1559,7 @@ class NationSelector(commands.Cog):
             interaction.guild,
             (
                 f"{interaction.user} reset `{user.id}` "
-                f"from {deleted['nation_name']} / `{deleted['minecraft_uuid']}`."
+                f"from {deleted['nation_name'] or 'No nation'} / `{deleted['minecraft_uuid']}`."
             ),
         )
 

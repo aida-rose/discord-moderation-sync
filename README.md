@@ -57,7 +57,7 @@ Register the Microsoft OAuth app for personal Microsoft accounts, add a web redi
 
 Java profile verification uses Minecraft Java game service APIs; new third-party integrations may need Mojang review/allowlist access.
 
-Use `/nation_panel` to send the registration button. Users choose Java or Bedrock/Geyser before Microsoft sign-in, and the callback links only the selected account type. Primary-server administrators can use `/nation_change` to change a registered user's nation and `/nation_reset` to remove a user from the nation database.
+Use `/nation_panel` to send the registration button. Users choose Java or Bedrock/Geyser before Microsoft sign-in, and the callback links only the selected account type. Members with administrator permission still verify and save their Minecraft account, but they are stored with no nation assignment and only receive the whitelisted role. Primary-server administrators can use `/nation_change` to change a registered user's nation and `/nation_reset` to remove a user from the nation database.
 
 ## Docker Compose Deployment
 

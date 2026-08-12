@@ -56,6 +56,7 @@ MINECRAFT_PROFILE_URL = "https://api.minecraftservices.com/minecraft/profile"
 MINECRAFT_RELYING_PARTY = "rp://api.minecraftservices.com/"
 XBOX_AUTH_RELYING_PARTY = "http://auth.xboxlive.com"
 XBOX_RELYING_PARTY = "http://xboxlive.com"
+PENDING_NATION_ASSIGNMENT = "__pending_nation_assignment__"
 XSTS_ERROR_HINTS = {
     "2148916233": "This Microsoft account does not have an Xbox profile yet. Sign in at xbox.com once, create/accept the Xbox profile, then try again.",
     "2148916235": "Xbox Live is not available for this Microsoft account's country or region.",
@@ -495,6 +496,25 @@ def html_page(title: str, body: str) -> web.Response:
     )
 
 
+def retry_registration_body(message: str) -> str:
+    return (
+        f"{html.escape(message)}"
+        "<br><br>Return to Discord and press <strong>Reset Authentication</strong>, "
+        "or click the nation panel again to start a fresh sign-in."
+    )
+
+
+def format_duration(seconds: int) -> str:
+    if seconds < 60:
+        return f"{seconds} second(s)"
+
+    minutes = seconds // 60
+    if seconds % 60 == 0:
+        return f"{minutes} minute(s)"
+
+    return f"{minutes} minute(s) {seconds % 60} second(s)"
+
+
 def init_db() -> None:
     with moderation_db() as conn:
         conn.execute(
@@ -654,6 +674,19 @@ def consume_oauth_state(state: str) -> Optional[OAuthState]:
     )
 
 
+def delete_oauth_state_for_discord(discord_id: int) -> bool:
+    with moderation_db() as conn:
+        cleanup_oauth_states(conn)
+        cursor = conn.execute(
+            """
+            DELETE FROM nation_oauth_states
+            WHERE discord_id = ?
+            """,
+            (discord_id,),
+        )
+        return cursor.rowcount > 0
+
+
 def registration_for_discord(discord_id: int) -> Optional[sqlite3.Row]:
     with moderation_db() as conn:
         return conn.execute(
@@ -763,8 +796,18 @@ def delete_registration(discord_id: int) -> Optional[sqlite3.Row]:
 
 
 class OAuthLoginView(discord.ui.View):
-    def __init__(self, url: str):
-        super().__init__(timeout=300)
+    def __init__(
+        self,
+        cog: "NationSelector",
+        url: str,
+        discord_id: int,
+        nation_name: str,
+        timeout_seconds: int,
+    ):
+        super().__init__(timeout=timeout_seconds)
+        self.cog = cog
+        self.discord_id = discord_id
+        self.nation_name = nation_name
         self.add_item(
             discord.ui.Button(
                 label="Sign in with Microsoft",
@@ -773,12 +816,60 @@ class OAuthLoginView(discord.ui.View):
             )
         )
 
+    @discord.ui.button(
+        label="Reset Authentication",
+        style=discord.ButtonStyle.secondary,
+        row=1,
+    )
+    async def reset_authentication(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ):
+        if interaction.user.id != self.discord_id:
+            await interaction.response.send_message(
+                "Only the user who started this authentication can reset it.",
+                ephemeral=True,
+            )
+            return
+
+        if registration_for_discord(self.discord_id) is not None:
+            await interaction.response.edit_message(
+                content="You are already registered. Ask an administrator to run `/nation_reset` if you need to start over.",
+                view=None,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return
+
+        deleted = delete_oauth_state_for_discord(self.discord_id)
+        suffix = "" if deleted else " There was no active sign-in link left to reset."
+        await interaction.response.edit_message(
+            content=(
+                "Authentication reset."
+                f"{suffix}\n"
+                "Choose which Minecraft edition you want to link."
+            ),
+            view=EditionChoiceView(self.cog, self.nation_name, self.discord_id),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
 
 class EditionChoiceView(discord.ui.View):
-    def __init__(self, cog: "NationSelector", nation_name: str):
+    def __init__(self, cog: "NationSelector", nation_name: str, discord_id: int):
         super().__init__(timeout=300)
         self.cog = cog
         self.nation_name = nation_name
+        self.discord_id = discord_id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == self.discord_id:
+            return True
+
+        await interaction.response.send_message(
+            "Only the user who started this registration can use these buttons.",
+            ephemeral=True,
+        )
+        return False
 
     @discord.ui.button(
         label="Java",
@@ -941,6 +1032,30 @@ class NationSelector(commands.Cog):
             ),
         )
 
+    async def resolve_verified_nation_name(self, oauth_state: OAuthState) -> str:
+        if oauth_state.nation_name != PENDING_NATION_ASSIGNMENT:
+            return oauth_state.nation_name
+
+        guild, member = await self.home_member(oauth_state.discord_id)
+
+        if guild is None:
+            raise OAuthFlowError("The primary server is not available. Return to Discord and try again.")
+
+        nation_roles, missing = self.nation_roles(guild)
+        if missing or len(nation_roles) != len(NATION_SETTINGS):
+            details = " ".join(missing[:12])
+            raise OAuthFlowError(f"The nation roles are not fully configured yet. {details}".strip())
+
+        if member is not None:
+            if self.is_admin_no_nation_member(member):
+                return ""
+
+            current_nations = self.current_nations(member, nation_roles)
+            if current_nations:
+                return current_nations[0].name
+
+        return self.least_populated_nation(nation_roles).name
+
     async def apply_nation_role(
         self,
         member: discord.Member,
@@ -1063,7 +1178,7 @@ class NationSelector(commands.Cog):
                     "Admins are not assigned to nations.\n"
                     "Choose which Minecraft edition you want to link for whitelist verification."
                 ),
-                view=EditionChoiceView(self, ""),
+                view=EditionChoiceView(self, "", interaction.user.id),
                 ephemeral=True,
                 allowed_mentions=discord.AllowedMentions.none(),
             )
@@ -1078,30 +1193,12 @@ class NationSelector(commands.Cog):
             )
             return
 
-        current_nations = self.current_nations(interaction.user, nation_roles)
-        selected = current_nations[0] if current_nations else self.least_populated_nation(nation_roles)
-
-        if not current_nations:
-            try:
-                await self.apply_nation_role(
-                    interaction.user,
-                    selected,
-                    nation_roles,
-                    reason="Nation selector pending OAuth registration.",
-                )
-            except (discord.Forbidden, discord.HTTPException) as exc:
-                await self.send_ephemeral(
-                    interaction,
-                    f"Could not assign a nation role: `{type(exc).__name__}: {exc}`",
-                )
-                return
-
         await interaction.response.send_message(
             (
-                f"Your pending nation is **{selected.name}**.\n"
-                "Choose which Minecraft edition you want to link."
+                "Choose which Minecraft edition you want to link.\n"
+                "Your nation assignment will be finished after Microsoft verification."
             ),
-            view=EditionChoiceView(self, selected.name),
+            view=EditionChoiceView(self, PENDING_NATION_ASSIGNMENT, interaction.user.id),
             ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none(),
         )
@@ -1132,9 +1229,14 @@ class NationSelector(commands.Cog):
             return
 
         admin_without_nation = self.is_admin_no_nation_member(interaction.user) and not nation_name
+        pending_nation_assignment = nation_name == PENDING_NATION_ASSIGNMENT
 
-        if not admin_without_nation and self.nation_by_name(interaction.guild, nation_name) is None:
-            await self.send_ephemeral(interaction, "That pending nation is no longer configured. Click the panel again.")
+        if (
+            not admin_without_nation
+            and not pending_nation_assignment
+            and self.nation_by_name(interaction.guild, nation_name) is None
+        ):
+            await self.send_ephemeral(interaction, "That nation is no longer configured. Click the panel again.")
             return
 
         try:
@@ -1151,17 +1253,23 @@ class NationSelector(commands.Cog):
         )
         login_url = authorization_url(oauth_state, oauth)
         edition_label = "Bedrock/Geyser" if account_type == "bedrock" else "Java"
-        target_label = "No nation (admin)" if admin_without_nation else nation_name
+        target_label = (
+            "No nation (admin)"
+            if admin_without_nation
+            else "Pending verification"
+            if pending_nation_assignment
+            else nation_name
+        )
 
         await interaction.response.send_message(
             (
-                f"Your pending nation is **{target_label}**.\n"
                 f"Selected edition: **{edition_label}**.\n"
+                f"Nation assignment: **{target_label}**.\n"
                 "Use the Microsoft sign-in button to verify the Microsoft/Xbox account "
                 "that owns your Minecraft account. This link expires in "
-                f"{oauth.state_ttl_seconds // 60 or 1} minute(s)."
+                f"{format_duration(oauth.state_ttl_seconds)}."
             ),
-            view=OAuthLoginView(login_url),
+            view=OAuthLoginView(self, login_url, interaction.user.id, nation_name, oauth.state_ttl_seconds),
             ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none(),
         )
@@ -1238,25 +1346,28 @@ class NationSelector(commands.Cog):
 
     async def handle_oauth_callback(self, request: web.Request) -> web.Response:
         if request.query.get("error"):
-            description = html.escape(
+            description = (
                 request.query.get("error_description")
                 or request.query.get("error")
                 or "Microsoft sign-in was cancelled or failed."
             )
-            return html_page("Registration Cancelled", description)
+            return html_page("Registration Cancelled", retry_registration_body(description))
 
         state = request.query.get("state", "").strip()
         code = request.query.get("code", "").strip()
 
         if not state or not code:
-            return html_page("Registration Failed", "The OAuth callback was missing its state or code.")
+            return html_page(
+                "Registration Failed",
+                retry_registration_body("The OAuth callback was missing its state or code."),
+            )
 
         oauth_state = consume_oauth_state(state)
 
         if oauth_state is None:
             return html_page(
                 "Registration Link Expired",
-                "That Microsoft sign-in link is expired or was already used. Return to Discord and click the nation button again.",
+                retry_registration_body("That Microsoft sign-in link is expired or was already used."),
             )
 
         try:
@@ -1271,7 +1382,7 @@ class NationSelector(commands.Cog):
                 None,
                 f"OAuth registration failed for `{oauth_state.discord_id}`: {type(exc).__name__}: {exc}",
             )
-            return html_page("Registration Failed", html.escape(str(exc)))
+            return html_page("Registration Failed", retry_registration_body(str(exc)))
 
         existing = registration_for_discord(oauth_state.discord_id)
         if existing is not None:
@@ -1284,10 +1395,19 @@ class NationSelector(commands.Cog):
             )
 
         try:
+            nation_name = await self.resolve_verified_nation_name(oauth_state)
+        except OAuthFlowError as exc:
+            await self.log(
+                None,
+                f"OAuth registration failed for `{oauth_state.discord_id}` after verification: {exc}",
+            )
+            return html_page("Registration Failed", retry_registration_body(str(exc)))
+
+        try:
             create_registration(
                 discord_id=oauth_state.discord_id,
                 profile=profile,
-                nation_name=oauth_state.nation_name,
+                nation_name=nation_name,
             )
         except AlreadyRegisteredError:
             return html_page(
@@ -1297,7 +1417,10 @@ class NationSelector(commands.Cog):
         except MinecraftAlreadyRegisteredError as exc:
             return html_page(
                 "Minecraft Account Already Registered",
-                f"That Minecraft account is already registered to Discord ID {exc.discord_id}.",
+                (
+                    f"That Minecraft account is already registered to Discord ID {exc.discord_id}. "
+                    "Ask an administrator to run `/nation_reset` if this needs to be corrected."
+                ),
             )
 
         guild, member = await self.home_member(oauth_state.discord_id)
@@ -1306,12 +1429,12 @@ class NationSelector(commands.Cog):
         if member is not None:
             role_notes = await self.apply_registered_roles(
                 member,
-                oauth_state.nation_name,
+                nation_name,
                 reason="Nation selector Microsoft OAuth registration.",
             )
 
         account_label = "Bedrock/Geyser" if profile.account_type == "bedrock" else "Java"
-        nation_label = oauth_state.nation_name or "No nation (admin)"
+        nation_label = nation_name or "No nation (admin)"
         await self.log(
             guild,
             (
@@ -1320,12 +1443,20 @@ class NationSelector(commands.Cog):
             ),
         )
 
-        body = (
-            f"Registered {html.escape(account_label)} account "
-            f"<strong>{html.escape(profile.username)}</strong> to "
-            f"<strong>{html.escape(nation_label)}</strong>. "
-            "You can close this page and return to Discord."
-        )
+        if nation_name:
+            body = (
+                f"Registered {html.escape(account_label)} account "
+                f"<strong>{html.escape(profile.username)}</strong> to "
+                f"<strong>{html.escape(nation_label)}</strong>. "
+                "You can close this page and return to Discord."
+            )
+        else:
+            body = (
+                f"Registered {html.escape(account_label)} account "
+                f"<strong>{html.escape(profile.username)}</strong>. "
+                "You are whitelisted without a nation assignment. "
+                "You can close this page and return to Discord."
+            )
 
         if role_notes:
             body += "<br><br>" + "<br>".join(html.escape(note) for note in role_notes)
@@ -1493,11 +1624,30 @@ class NationSelector(commands.Cog):
             )
             return
 
+        member = interaction.guild.get_member(user.id)
+
+        if member is not None and self.is_admin_no_nation_member(member):
+            update_registration_nation(user.id, "")
+            role_notes = await self.apply_registered_roles(
+                member,
+                "",
+                reason=f"Nation change blocked for admin by {interaction.user}.",
+            )
+            await interaction.followup.send(
+                (
+                    "That user is an administrator, so they cannot be assigned to a nation. "
+                    "Their registration is now set to no nation.\n"
+                    + "\n".join(role_notes)
+                ),
+                ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return
+
         if not update_registration_nation(user.id, nation.value):
             await interaction.followup.send("That user is not in the nation database.", ephemeral=True)
             return
 
-        member = interaction.guild.get_member(user.id)
         role_note = "User is not currently in the server; roles will be restored when they rejoin."
 
         if member is not None:

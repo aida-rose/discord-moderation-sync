@@ -10,6 +10,7 @@ import discord
 from discord.ext import commands
 
 import config
+from common import format_duration_hhmmss
 from altcheck import (
     AltReport,
     best_match_text,
@@ -429,6 +430,17 @@ def format_dt(value: Optional[datetime]) -> str:
 
     unix = int(value.timestamp())
     return f"<t:{unix}:F> (`{value.isoformat()}`)"
+
+
+def timeout_length_text(until: Optional[datetime]) -> str:
+    if until is None:
+        return "None"
+
+    if until.tzinfo is None:
+        until = until.replace(tzinfo=timezone.utc)
+
+    remaining = until - utc_now()
+    return format_duration_hhmmss(remaining)
 
 
 def role_diff(before_roles: Iterable[discord.Role], after_roles: Iterable[discord.Role]):
@@ -1316,6 +1328,9 @@ class Logging(commands.Cog):
                 ("Before", format_dt(before.timed_out_until), True),
                 ("After", format_dt(after.timed_out_until), True),
             ]
+
+            if after.timed_out_until is not None and after.timed_out_until > utc_now():
+                fields.append(("Mute Length", timeout_length_text(after.timed_out_until), True))
 
             fields.extend(
                 await self.audit_fields(

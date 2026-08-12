@@ -31,6 +31,7 @@ from common import (
     case_log,
     display_user,
     duration_arg,
+    format_duration_hhmmss,
     home_ban_entries,
     member_in,
     send_notice,
@@ -885,7 +886,7 @@ class Moderation(commands.Cog):
                 reason=audit_reason,
                 expires_at=datetime.now(timezone.utc) + timeout_duration,
             )
-            return f"Timeout set for {timeout_duration}."
+            return f"Timeout set for {format_duration_hhmmss(timeout_duration)}."
 
         results = await for_each_current_guild(self.bot, mute_in_guild)
 

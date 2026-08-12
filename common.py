@@ -206,6 +206,13 @@ def discord_time(iso_text: str) -> str:
     except Exception:
         return iso_text
 
+
+def format_duration_hhmmss(duration: timedelta) -> str:
+    total_seconds = max(0, int(duration.total_seconds()))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
 def user_avatar_url(user: discord.User | discord.Member | None) -> str | None:
     if user is None:
         return None
@@ -332,7 +339,7 @@ async def case_log(
     embed.add_field(name="Moderator", value=f"<@{moderator.id}> {moderator} (`{moderator.id}`)", inline=False)
 
     if duration is not None:
-        embed.add_field(name="Duration", value=str(duration), inline=True)
+        embed.add_field(name="Duration", value=format_duration_hhmmss(duration), inline=True)
 
     embed.add_field(name="Reason", value=reason[:1024] if reason else "No reason provided.", inline=False)
 
@@ -502,7 +509,7 @@ async def send_notice(
     embed.add_field(name="Action", value=action, inline=False)
 
     if duration is not None:
-        embed.add_field(name="Duration", value=str(duration), inline=False)
+        embed.add_field(name="Duration", value=format_duration_hhmmss(duration), inline=False)
 
     embed.add_field(name="Reason", value=reason[:1024] if reason else "No reason provided.", inline=False)
     # embed.add_field(name="Moderator", value=str(moderator), inline=False)

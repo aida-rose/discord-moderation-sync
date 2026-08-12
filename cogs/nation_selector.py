@@ -56,6 +56,13 @@ MINECRAFT_PROFILE_URL = "https://api.minecraftservices.com/minecraft/profile"
 MINECRAFT_RELYING_PARTY = "rp://api.minecraftservices.com/"
 XBOX_AUTH_RELYING_PARTY = "http://auth.xboxlive.com"
 XBOX_RELYING_PARTY = "http://xboxlive.com"
+XSTS_ERROR_HINTS = {
+    "2148916233": "This Microsoft account does not have an Xbox profile yet. Sign in at xbox.com once, create/accept the Xbox profile, then try again.",
+    "2148916235": "Xbox Live is not available for this Microsoft account's country or region.",
+    "2148916236": "This Microsoft account needs adult verification before Xbox Live can be used.",
+    "2148916237": "This is a child account and cannot authorize Xbox Live here without family/adult approval.",
+    "2148916238": "This child account is not attached to a Microsoft family. Add it to a family or use another account.",
+}
 
 
 class MinecraftLookupError(Exception):
@@ -232,10 +239,24 @@ def oauth_error_message(prefix: str, status: int, data: dict) -> str:
     message = (
         data.get("error_description")
         or data.get("errorMessage")
+        or data.get("Message")
         or data.get("message")
         or data.get("error")
         or f"HTTP {status}"
     )
+    xsts_error = str(data.get("XErr") or "").strip()
+    if xsts_error:
+        hint = XSTS_ERROR_HINTS.get(xsts_error)
+        xsts_message = f"XErr {xsts_error}"
+        if hint:
+            xsts_message = f"{xsts_message} - {hint}"
+
+        redirect = str(data.get("Redirect") or "").strip()
+        if redirect:
+            xsts_message = f"{xsts_message} See {redirect}"
+
+        return f"{prefix}: {xsts_message}"
+
     return f"{prefix}: {message}"
 
 

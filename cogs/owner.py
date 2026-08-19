@@ -3,6 +3,7 @@ import sys
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 import discord
 from discord import app_commands
@@ -35,6 +36,7 @@ INT_SETTINGS = {
 }
 
 TICKET_COG_EXTENSION = "cogs.tickets"
+ROLE_PANEL_PREFIX = "role_panel:give:"
 
 
 def parse_csv_ids(raw: str) -> list[int]:
@@ -247,10 +249,50 @@ def format_uptime(started_at: datetime) -> str:
     return " ".join(parts)
 
 
+class RolePanelView(discord.ui.View):
+    def __init__(self, cog: "Owner", role: discord.Role, button_label: str):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.role_id = role.id
+        self.add_item(
+            RolePanelButton(
+                label=button_label[:80],
+                role_id=role.id,
+            )
+        )
+
+
+class RolePanelButton(discord.ui.Button):
+    def __init__(self, *, label: str, role_id: int):
+        super().__init__(
+            label=label,
+            style=discord.ButtonStyle.primary,
+            custom_id=f"{ROLE_PANEL_PREFIX}{role_id}",
+        )
+        self.role_id = role_id
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.response.is_done():
+            return
+
+        view = self.view
+        if not isinstance(view, RolePanelView):
+            await interaction.response.send_message("This role button is misconfigured.", ephemeral=True)
+            return
+
+        await view.cog.handle_role_button(interaction, self.role_id)
+
+
 class Owner(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.started_at = datetime.now(timezone.utc)
+
+    async def send_ephemeral(self, interaction: discord.Interaction, message: str) -> None:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
 
     async def apply_ticket_cog_toggle(
         self,
@@ -323,6 +365,134 @@ class Owner(commands.Cog):
             )
 
         return False
+
+    def bot_member(self, guild: discord.Guild) -> Optional[discord.Member]:
+        if self.bot.user is None:
+            return None
+
+        return guild.get_member(self.bot.user.id)
+
+    def role_can_be_assigned(self, guild: discord.Guild, role: discord.Role) -> Optional[str]:
+        if role == guild.default_role:
+            return "You cannot make a panel for `@everyone`."
+
+        if role.managed:
+            return "That role is managed by an integration and cannot be assigned by the bot."
+
+        if role.permissions.administrator:
+            return "For safety, role panels cannot assign administrator roles."
+
+        bot_member = self.bot_member(guild)
+        if bot_member is None:
+            return "The bot member could not be found in this server."
+
+        if role >= bot_member.top_role:
+            return "Move the bot's role above that role, then try again."
+
+        return None
+
+    @app_commands.command(
+        name="role_panel",
+        description="Send a button panel that gives members a role.",
+    )
+    @app_commands.describe(
+        role="Role to give when the button is clicked.",
+        channel="Optional channel for the panel. Defaults to the current channel.",
+        title="Optional panel title.",
+        description="Optional panel description.",
+        button_label="Optional button label.",
+    )
+    async def role_panel(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role,
+        channel: Optional[discord.TextChannel] = None,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        button_label: Optional[str] = None,
+    ):
+        if not await self.owner_check(interaction):
+            return
+
+        if interaction.guild is None or interaction.guild.id != config.HOME_GUILD_ID:
+            await self.send_ephemeral(interaction, "Use this in the configured primary server.")
+            return
+
+        target = channel or interaction.channel
+        if not isinstance(target, discord.TextChannel):
+            await self.send_ephemeral(interaction, "Choose a server text channel.")
+            return
+
+        role_error = self.role_can_be_assigned(interaction.guild, role)
+        if role_error is not None:
+            await self.send_ephemeral(interaction, role_error)
+            return
+
+        panel_title = (title or f"{role.name} Role")[:256]
+        panel_description = description or f"Click the button below to get {role.mention}."
+        panel_button_label = button_label or f"Get {role.name}"
+
+        embed = discord.Embed(
+            title=panel_title,
+            description=panel_description,
+            color=role.color if role.color.value else discord.Color.blurple(),
+        )
+
+        await target.send(
+            embed=embed,
+            view=RolePanelView(self, role, panel_button_label),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        await self.send_ephemeral(interaction, f"Role panel sent to {target.mention}.")
+
+    async def handle_role_button(self, interaction: discord.Interaction, role_id: int) -> None:
+        if interaction.guild is None or not isinstance(interaction.user, discord.Member):
+            await interaction.response.send_message("Use this button from inside the server.", ephemeral=True)
+            return
+
+        role = interaction.guild.get_role(role_id)
+        if role is None:
+            await interaction.response.send_message("That role no longer exists.", ephemeral=True)
+            return
+
+        role_error = self.role_can_be_assigned(interaction.guild, role)
+        if role_error is not None:
+            await interaction.response.send_message(role_error, ephemeral=True)
+            return
+
+        if role in interaction.user.roles:
+            await interaction.response.send_message(f"You already have {role.mention}.", ephemeral=True)
+            return
+
+        try:
+            await interaction.user.add_roles(role, reason="Role panel button clicked.")
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            await interaction.response.send_message(
+                f"Could not add that role: `{type(exc).__name__}: {exc}`",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_message(f"Added {role.mention}.", ephemeral=True)
+
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction):
+        if interaction.type is not discord.InteractionType.component:
+            return
+
+        custom_id = interaction.data.get("custom_id") if isinstance(interaction.data, dict) else None
+        if not isinstance(custom_id, str) or not custom_id.startswith(ROLE_PANEL_PREFIX):
+            return
+
+        if interaction.response.is_done():
+            return
+
+        raw_role_id = custom_id.removeprefix(ROLE_PANEL_PREFIX)
+        if not raw_role_id.isdigit():
+            await interaction.response.send_message("This role button is misconfigured.", ephemeral=True)
+            return
+
+        await self.handle_role_button(interaction, int(raw_role_id))
 
     @app_commands.command(
         name="ping",

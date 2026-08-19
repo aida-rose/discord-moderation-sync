@@ -10,3 +10,22 @@ services:
       - "${NATION_OAUTH_PORT:-8080}:${NATION_OAUTH_PORT:-8080}"
     volumes:
       - ./data:/app/data
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: insmp-caddy
+    restart: unless-stopped
+    depends_on:
+      - discord-moderation-sync
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web:/srv/insmp:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

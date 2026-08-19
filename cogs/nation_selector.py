@@ -144,6 +144,21 @@ def dashed_uuid(raw_uuid: str) -> str:
     )
 
 
+def manual_java_uuid(raw_uuid: str) -> str:
+    value = raw_uuid.strip()
+
+    if re.fullmatch(r"[0-9a-fA-F]{32}", value):
+        return dashed_uuid(value)
+
+    if re.fullmatch(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+        value,
+    ):
+        return dashed_uuid(value)
+
+    raise MinecraftLookupError("Enter a valid Java UUID, either dashed or 32 hex characters.")
+
+
 def floodgate_uuid_from_xuid(xuid: str | int) -> str:
     try:
         xuid_int = int(str(xuid))
@@ -1686,6 +1701,111 @@ class NationSelector(commands.Cog):
         await self.log(
             interaction.guild,
             f"{interaction.user} changed `{user.id}` to {nation.value}.",
+        )
+
+    @app_commands.command(
+        name="nation_manual_java",
+        description="Manually register a Java UUID without Microsoft OAuth.",
+    )
+    @app_commands.describe(
+        user="Discord member to register.",
+        uuid="Java Minecraft UUID, dashed or undashed.",
+        username="Optional Java username to store with the UUID.",
+    )
+    async def nation_manual_java(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member,
+        uuid: str,
+        username: Optional[str] = None,
+    ):
+        if not await self.admin_or_owner_check(interaction):
+            return
+
+        if not self.home_guild_ready(interaction):
+            await self.send_ephemeral(interaction, "Use this in the configured primary server.")
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        if registration_for_discord(user.id) is not None:
+            await interaction.followup.send(
+                "That Discord account is already registered. Use `/nation_reset` first if you need to replace it.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            normalized_uuid = manual_java_uuid(uuid)
+        except MinecraftLookupError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+
+        stored_username = (username or "").strip() or normalized_uuid
+        profile = MinecraftProfile(
+            account_type="java",
+            username=stored_username[:64],
+            uuid=normalized_uuid,
+        )
+        oauth_state = OAuthState(
+            state="manual",
+            code_verifier="manual",
+            discord_id=user.id,
+            nation_name=PENDING_NATION_ASSIGNMENT,
+            account_type="java",
+            expires_at=utc_now_iso(),
+        )
+
+        try:
+            nation_name = await self.resolve_verified_nation_name(oauth_state)
+        except OAuthFlowError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)
+            return
+
+        try:
+            create_registration(
+                discord_id=user.id,
+                profile=profile,
+                nation_name=nation_name,
+            )
+        except AlreadyRegisteredError:
+            await interaction.followup.send(
+                "That Discord account is already registered. Use `/nation_reset` first if you need to replace it.",
+                ephemeral=True,
+            )
+            return
+        except MinecraftAlreadyRegisteredError as exc:
+            await interaction.followup.send(
+                f"That Minecraft UUID is already registered to Discord ID {exc.discord_id}.",
+                ephemeral=True,
+            )
+            return
+
+        delete_oauth_state_for_discord(user.id)
+
+        role_notes = await self.apply_registered_roles(
+            user,
+            nation_name,
+            reason=f"Manual Java UUID registration by {interaction.user}.",
+        )
+        nation_label = nation_name or "No nation (admin)"
+
+        await interaction.followup.send(
+            (
+                f"Registered <@{user.id}> as Java `{profile.username}` (`{profile.uuid}`) "
+                f"to **{nation_label}**.\n"
+                + "\n".join(role_notes)
+            ),
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+        await self.log(
+            interaction.guild,
+            (
+                f"{interaction.user} manually registered Java UUID `{profile.uuid}` "
+                f"for {user} (`{user.id}`) in {nation_label}."
+            ),
         )
 
     @app_commands.command(

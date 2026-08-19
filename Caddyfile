@@ -1,4 +1,8 @@
-insmp.org, www.insmp.org {
+insmp.org {
+	redir https://www.insmp.org{uri} permanent
+}
+
+www.insmp.org {
 	root * /srv/insmp
 	file_server
 }

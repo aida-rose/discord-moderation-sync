@@ -730,13 +730,21 @@ class Moderation(commands.Cog):
         audit_reason = f"[{config.CASE_TAG}] {reason} | unban issued by {ctx.author} ({ctx.author.id}) from home server"
 
         async def unban_in_guild(guild: discord.Guild) -> str:
-            await guild.unban(unban_target, reason=audit_reason)
-            clear_protected_action(
-                action_type="ban",
-                guild_id=guild.id,
-                user_id=target_user_id,
-            )
-            return "Ban removed."
+            try:
+                await guild.unban(unban_target, reason=audit_reason)
+                clear_protected_action(
+                    action_type="ban",
+                    guild_id=guild.id,
+                    user_id=target_user_id,
+                )
+                return "Ban removed."
+            except discord.NotFound:
+                clear_protected_action(
+                    action_type="ban",
+                    guild_id=guild.id,
+                    user_id=target_user_id,
+                )
+                raise NothingToDo("User was not banned in this server.")
 
         results = await for_each_current_guild(self.bot, unban_in_guild)
 

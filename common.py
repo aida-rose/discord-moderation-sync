@@ -250,6 +250,16 @@ def is_user_not_in_server_result(result: GuildResult) -> bool:
     )
 
 
+def is_user_not_banned_result(result: GuildResult) -> bool:
+    detail = str(getattr(result, "detail", "")).lower()
+
+    return (
+        "not banned in this server" in detail
+        or "was not banned" in detail
+        or "not banned" in detail
+    )
+
+
 def is_permission_or_hierarchy_result(result: GuildResult) -> bool:
     detail = str(getattr(result, "detail", "")).lower()
 
@@ -295,6 +305,7 @@ def guild_result_text(results: list[GuildResult]) -> str:
         for result in results
         if getattr(result, "status", "") in {"Failed", "Needs review"}
         and result not in permission_or_hierarchy
+        and not is_user_not_banned_result(result)
     ]
 
     lines = [

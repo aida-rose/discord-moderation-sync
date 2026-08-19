@@ -258,6 +258,15 @@ def oauth_error_message(prefix: str, status: int, data: dict) -> str:
 
         return f"{prefix}: {xsts_message}"
 
+    if "invalid app registration" in str(message).lower():
+        return (
+            f"{prefix}: This Microsoft app is not approved for Minecraft Java Edition "
+            "game service API access yet. Mojang reviews and allowlists new Java API "
+            "integrations. Bedrock/Geyser linking may still work, but Java linking "
+            "will fail until this app is approved. See "
+            "https://help.minecraft.net/hc/en-us/articles/16254801392141"
+        )
+
     return f"{prefix}: {message}"
 
 

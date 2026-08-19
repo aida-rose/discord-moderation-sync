@@ -410,6 +410,18 @@ def reload_settings() -> None:
     global LOG_ROLE_MANAGEMENT_THREAD_ID
     global SELF_LOG_THREAD_ID
     global NATION_SELECTOR_LOG_THREAD_ID
+    global PLAINS_ROLE_ID
+    global FOREST_ROLE_ID
+    global DESERT_ROLE_ID
+    global TAIGA_ROLE_ID
+    global JUNGLE_ROLE_ID
+    global DARK_FOREST_ROLE_ID
+    global MESA_ROLE_ID
+    global SNOW_ROLE_ID
+    global MUSHROOM_ISLAND_ROLE_ID
+    global SAVANNA_ROLE_ID
+    global SWAMP_ROLE_ID
+    global CHERRY_ROLE_ID
     global SWEARS_FILE
     global FLAGGED_MESSAGE_REGEX
     global SYNC_GUILD_IDS
@@ -454,6 +466,18 @@ def reload_settings() -> None:
     LOG_ROLE_MANAGEMENT_THREAD_ID = _int_setting("LOG_ROLE_MANAGEMENT_THREAD_ID")
     SELF_LOG_THREAD_ID = _int_setting("SELF_LOG_THREAD_ID")
     NATION_SELECTOR_LOG_THREAD_ID = _int_setting("NATION_SELECTOR_LOG_THREAD_ID")
+    PLAINS_ROLE_ID = _int_setting("PLAINS_ROLE_ID")
+    FOREST_ROLE_ID = _int_setting("FOREST_ROLE_ID")
+    DESERT_ROLE_ID = _int_setting("DESERT_ROLE_ID")
+    TAIGA_ROLE_ID = _int_setting("TAIGA_ROLE_ID")
+    JUNGLE_ROLE_ID = _int_setting("JUNGLE_ROLE_ID")
+    DARK_FOREST_ROLE_ID = _int_setting("DARK_FOREST_ROLE_ID")
+    MESA_ROLE_ID = _int_setting("MESA_ROLE_ID")
+    SNOW_ROLE_ID = _int_setting("SNOW_ROLE_ID")
+    MUSHROOM_ISLAND_ROLE_ID = _int_setting("MUSHROOM_ISLAND_ROLE_ID")
+    SAVANNA_ROLE_ID = _int_setting("SAVANNA_ROLE_ID")
+    SWAMP_ROLE_ID = _int_setting("SWAMP_ROLE_ID")
+    CHERRY_ROLE_ID = _int_setting("CHERRY_ROLE_ID")
     SWEARS_FILE = get_setting("SWEARS_FILE")
     FLAGGED_MESSAGE_REGEX = get_setting("FLAGGED_MESSAGE_REGEX").strip()
 

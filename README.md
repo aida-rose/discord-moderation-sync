@@ -55,7 +55,7 @@ To enable the nation selector, set `ENABLE_NATION_SELECTOR` to `true` and restar
 
 Register the Microsoft OAuth app for personal Microsoft accounts, add a web redirect URI that exactly matches `MS_REDIRECT_URI`, and make that URL route to this bot's `NATION_OAUTH_PORT`.
 
-Java profile verification uses Minecraft Java game service APIs; new third-party integrations may need Mojang review/allowlist access.
+Java profile verification uses Minecraft Java game service APIs; new third-party integrations may need Mojang review/allowlist access. If Java linking fails with `Invalid app registration`, the Microsoft app needs Mojang approval before it can use those Java APIs.
 
 Use `/nation_panel` to send the registration button. Users choose Java or Bedrock/Geyser before Microsoft sign-in, and the callback links only the selected account type. Nation assignment is not shown or applied until after Microsoft verification succeeds. If a user starts sign-in and needs to retry, they can press **Reset Authentication** on the sign-in message instead of waiting for the link to expire. Members with administrator permission still verify and save their Minecraft account, but they are stored with no nation assignment and only receive the whitelisted role. Primary-server administrators can use `/nation_change` to change a registered user's nation and `/nation_reset` to remove a user from the nation database.
 

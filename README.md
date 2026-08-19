@@ -59,6 +59,12 @@ Java profile verification uses Minecraft Java game service APIs; new third-party
 
 Use `/nation_panel` to send the registration button. Users choose Java or Bedrock/Geyser before Microsoft sign-in, and the callback links only the selected account type. Nation assignment is not shown or applied until after Microsoft verification succeeds. If a user starts sign-in and needs to retry, they can press **Reset Authentication** on the sign-in message instead of waiting for the link to expire. Members with administrator permission still verify and save their Minecraft account, but they are stored with no nation assignment and only receive the whitelisted role. Primary-server administrators can use `/nation_manual_java` to manually register a Java UUID without OAuth, `/nation_change` to change a registered user's nation, and `/nation_reset` to remove a user from the nation database.
 
+For live read-only whitelist access from another server, set `WHITELIST_EXPORT_TOKEN` in `.env` and optionally `WHITELIST_EXPORT_PATH` (default `/api/whitelist`). The external server can pull current registrations with:
+
+```sh
+curl -H "Authorization: Bearer $WHITELIST_EXPORT_TOKEN" https://auth.insmp.org/api/whitelist
+```
+
 ## Docker Compose Deployment
 
 Create a `.env` file with `DISCORD_TOKEN` and `BOT_OWNER_IDS`, then run:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import html
 import json
 import os
@@ -46,6 +47,7 @@ NATION_CHOICES = [
 USER_AGENT = "discord-moderation-sync/nation-selector"
 DEFAULT_OAUTH_CALLBACK_PATH = "/oauth/microsoft/callback"
 DEFAULT_OAUTH_STATE_TTL_SECONDS = 600
+DEFAULT_WHITELIST_EXPORT_PATH = "/api/whitelist"
 MICROSOFT_AUTHORIZE_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize"
 MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
 MICROSOFT_OAUTH_SCOPE = "XboxLive.signin"
@@ -109,6 +111,8 @@ class OAuthConfig:
     host: str
     port: int
     state_ttl_seconds: int
+    whitelist_export_path: str
+    whitelist_export_token: str
 
 
 @dataclass(frozen=True)
@@ -202,6 +206,10 @@ def oauth_config() -> OAuthConfig:
     if state_ttl_seconds <= 0:
         raise OAuthConfigError("`NATION_OAUTH_STATE_TTL_SECONDS` must be greater than 0.")
 
+    whitelist_export_path = os.getenv("WHITELIST_EXPORT_PATH", DEFAULT_WHITELIST_EXPORT_PATH).strip()
+    if not whitelist_export_path.startswith("/"):
+        whitelist_export_path = f"/{whitelist_export_path}"
+
     return OAuthConfig(
         client_id=client_id,
         client_secret=client_secret,
@@ -210,6 +218,8 @@ def oauth_config() -> OAuthConfig:
         host=os.getenv("NATION_OAUTH_HOST", "0.0.0.0").strip() or "0.0.0.0",
         port=env_int("NATION_OAUTH_PORT", 8080),
         state_ttl_seconds=state_ttl_seconds,
+        whitelist_export_path=whitelist_export_path,
+        whitelist_export_token=os.getenv("WHITELIST_EXPORT_TOKEN", "").strip(),
     )
 
 
@@ -735,6 +745,39 @@ def registration_for_minecraft(minecraft_uuid: str) -> Optional[sqlite3.Row]:
         ).fetchone()
 
 
+def whitelist_export_rows() -> list[dict]:
+    with moderation_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                discord_id,
+                minecraft_uuid,
+                nation_name,
+                minecraft_username,
+                minecraft_account_type,
+                minecraft_xuid,
+                created_at,
+                updated_at
+            FROM nation_members
+            ORDER BY discord_id
+            """
+        ).fetchall()
+
+    return [
+        {
+            "discord_id": int(row["discord_id"]),
+            "minecraft_uuid": str(row["minecraft_uuid"]),
+            "nation_name": str(row["nation_name"]),
+            "minecraft_username": str(row["minecraft_username"]),
+            "minecraft_account_type": str(row["minecraft_account_type"]),
+            "minecraft_xuid": row["minecraft_xuid"],
+            "created_at": str(row["created_at"]),
+            "updated_at": str(row["updated_at"]),
+        }
+        for row in rows
+    ]
+
+
 def create_registration(
     *,
     discord_id: int,
@@ -954,6 +997,7 @@ class NationSelector(commands.Cog):
 
         app = web.Application()
         app.router.add_get(oauth.callback_path, self.handle_oauth_callback)
+        app.router.add_get(oauth.whitelist_export_path, self.handle_whitelist_export)
 
         if oauth.callback_path != DEFAULT_OAUTH_CALLBACK_PATH:
             app.router.add_get(DEFAULT_OAUTH_CALLBACK_PATH, self.handle_oauth_callback)
@@ -963,6 +1007,8 @@ class NationSelector(commands.Cog):
         self.oauth_site = web.TCPSite(self.oauth_runner, oauth.host, oauth.port)
         await self.oauth_site.start()
         print(f"[nation_selector.py] OAuth callback listening on {oauth.host}:{oauth.port}{oauth.callback_path}")
+        if oauth.whitelist_export_token:
+            print(f"[nation_selector.py] Whitelist export listening on {oauth.host}:{oauth.port}{oauth.whitelist_export_path}")
 
     async def stop_oauth_server(self) -> None:
         if self.oauth_runner is None:
@@ -975,6 +1021,32 @@ class NationSelector(commands.Cog):
     def cog_unload(self):
         if self.oauth_runner is not None:
             self.bot.loop.create_task(self.stop_oauth_server())
+
+    async def handle_whitelist_export(self, request: web.Request) -> web.Response:
+        try:
+            oauth = oauth_config()
+        except OAuthConfigError:
+            return web.json_response({"error": "OAuth server is not configured."}, status=503)
+
+        if not oauth.whitelist_export_token:
+            return web.json_response({"error": "Whitelist export is not configured."}, status=404)
+
+        authorization = request.headers.get("Authorization", "")
+        prefix = "Bearer "
+        provided_token = authorization[len(prefix):].strip() if authorization.startswith(prefix) else ""
+
+        if not provided_token or not hmac.compare_digest(provided_token, oauth.whitelist_export_token):
+            return web.json_response({"error": "Unauthorized."}, status=401)
+
+        rows = whitelist_export_rows()
+        return web.json_response(
+            {
+                "generated_at": utc_now_iso(),
+                "count": len(rows),
+                "members": rows,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
 
     async def send_ephemeral(self, interaction: discord.Interaction, message: str) -> None:
         if interaction.response.is_done():

@@ -33,7 +33,6 @@ if config.ENABLE_NATION_SELECTOR:
 COGS = [*CORE_COGS, *OPTIONAL_COGS]
 
 BAN_LOCKED_COMMANDS = {
-    "altcheck",
     "ban",
     "tempban",
     "syncbans",

@@ -18,7 +18,6 @@ This bot is intended for use by a controlled network of approved servers. It is 
 - Message, role, user, invite, join/leave, VC, and server-management logs
 - Warn system
 - User info command
-- Privacy-preserving altcheck scoring from public profile and language patterns
 - Join guard / account age protection
 - Runtime affiliate management commands for bot owners
 - Optional ticket system with category dropdowns, close/archive flow, transcripts, and media logs
@@ -34,8 +33,6 @@ The `.env` file only needs:
 - `BOT_OWNER_IDS`
 
 All other bot settings are stored in `data/moderation.sqlite3` and managed through owner-only slash commands such as `/config_set`, `/config_id_add`, `/config_id_remove`, `/config_get`, and `/config_list`.
-
-Set `ALT_ALERT_ROLE_ID` with `/config_set` to ping a role when altcheck links a medium/high-risk account to a banned user.
 
 To enable tickets, set `ENABLE_TICKETS` to `true` and restart the bot. Then configure:
 
